@@ -1,0 +1,283 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <meta name="color-scheme" content="light" />
+    <meta name="theme-color" content="#4f68be" />
+    <title>QQ Codex Bridge</title>
+    <link rel="stylesheet" href="/styles.css" />
+  </head>
+  <body>
+    <section id="pair-view" class="center-card" hidden>
+      <div class="brand-mark" aria-label="Bridge">
+        <svg class="bridge-mark-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M8.5 7H7a5 5 0 0 0 0 10h3.5"/><path d="M15.5 7H17a5 5 0 0 1 0 10h-3.5"/><path d="M8 12h8"/></svg>
+      </div>
+      <p class="eyebrow">PRIVATE ACCESS</p>
+      <h1>登录 WebUI</h1>
+      <p id="login-help" class="muted">请输入在桥接主机本地设置的远程访问密码。</p>
+      <form id="login-form" class="stack-form">
+        <label for="login-password">远程访问密码</label>
+        <input id="login-password" name="password" type="password" autocomplete="current-password" maxlength="256" placeholder="输入密码" required />
+        <button class="primary" type="submit">登录</button>
+      </form>
+      <p id="login-error" class="form-error" role="alert"></p>
+    </section>
+
+    <div id="app-view" class="app-shell" hidden>
+      <header class="topbar">
+        <div class="brand-title">
+          <div class="brand-mark small-mark" aria-label="Bridge">
+            <svg class="bridge-mark-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M8.5 7H7a5 5 0 0 0 0 10h3.5"/><path d="M15.5 7H17a5 5 0 0 1 0 10h-3.5"/><path d="M8 12h8"/></svg>
+          </div>
+          <div><p class="eyebrow">QQ CODEX BRIDGE</p><h1>本地控制台</h1></div>
+        </div>
+        <div class="top-actions">
+          <button id="account-switcher" class="account-switcher" type="button" title="当前连接的机器人账号">
+            <span class="account-avatar">Q</span>
+            <span><strong id="account-nickname">当前 NapCat</strong><small id="account-qq">QQ 读取中</small></span>
+          </button>
+          <div class="connection-pill"><span id="header-dot" class="status-dot"></span><span id="header-status">检查中</span></div>
+        </div>
+      </header>
+
+      <main class="content">
+        <section id="tab-chat" class="panel tab-panel active chat-panel" aria-labelledby="nav-chat">
+          <div class="chat-layout">
+            <aside id="conversation-sidebar" class="conversation-sidebar">
+              <div class="sidebar-heading">
+                <div><p class="eyebrow">CONVERSATIONS</p><h2>对话窗口</h2></div>
+                <button id="close-conversations" class="icon-button mobile-only" type="button" aria-label="关闭窗口列表">×</button>
+              </div>
+              <button id="new-conversation" class="primary full-button" type="button">＋ 新建对话</button>
+              <div id="conversation-list" class="conversation-list"></div>
+              <div class="sidebar-foot">
+                <div class="capacity-line"><span>聊天记录</span><strong id="sidebar-capacity">0%</strong></div>
+                <div class="progress-track"><span id="sidebar-progress"></span></div>
+              </div>
+            </aside>
+
+            <div class="chat-main">
+              <div class="panel-heading chat-heading">
+                <div class="chat-title-row chat-context-controls">
+                  <button id="toggle-conversations" class="icon-button mobile-only" type="button" aria-label="打开窗口列表">☰</button>
+                  <label class="context-select"><span>当前窗口</span><select id="conversation-selector" aria-label="当前窗口"></select></label>
+                  <span class="context-arrow">→</span>
+                  <label class="context-select"><span>当前人设</span><select id="persona-selector" aria-label="当前人设"></select></label>
+                </div>
+                <div class="heading-actions">
+                  <button id="rename-conversation" class="ghost compact" type="button" disabled>改名</button>
+                </div>
+              </div>
+              <div id="capacity-warning" class="warning-banner" hidden>
+                <strong>聊天记录快装满了。</strong><span>请及时清理旧窗口或在设置里提高上限。</span>
+              </div>
+              <div id="messages" class="messages" aria-live="polite"></div>
+              <section class="command-guide" aria-labelledby="command-guide-title">
+                <div class="command-guide-heading">
+                  <div><p class="eyebrow">QUICK COMMANDS</p><strong id="command-guide-title">内置指令</strong></div>
+                  <small>点击即可填入输入框</small>
+                </div>
+                <div class="command-grid">
+                  <button class="command-card" type="button" data-command="/清空对话"><code>/清空对话</code><span>清空上下文，保留本地记录</span></button>
+                  <button class="command-card" type="button" data-command="/新对话"><code>/新对话</code><span>创建一个新的对话窗口</span></button>
+                  <button class="command-card" type="button" data-command="/查看对话"><code>/查看对话</code><span>列出窗口名称与编号</span></button>
+                  <button class="command-card" type="button" data-command="/切换对话 01"><code>/切换对话 01</code><span>按编号切换当前窗口</span></button>
+                  <button class="command-card" type="button" data-command="/查看当前人设"><code>/查看当前人设</code><span>只查看本窗口绑定的人设</span></button>
+                  <button class="command-card" type="button" data-command="/查看人设列表"><code>/查看人设列表</code><span>列出全部人设与编号</span></button>
+                  <button class="command-card" type="button" data-command="/切换人设 01"><code>/切换人设 01</code><span>按编号切换；00 为默认助手</span></button>
+                  <button class="command-card" type="button" data-command="/查询额度"><code>/查询额度</code><span>查看 5 小时与周额度</span></button>
+                </div>
+              </section>
+              <form id="chat-form" class="composer">
+                <label class="sr-only" for="chat-input">输入任务</label>
+                <textarea id="chat-input" rows="2" maxlength="4000" placeholder="输入消息，第一句话会创建并自动命名窗口…" required></textarea>
+                <div class="composer-actions">
+                  <label class="toggle-row"><input id="use-memory" type="checkbox" checked /><span>使用长期记忆</span></label>
+                  <span class="privacy-note">聊天保存在本机；凭证类内容会先拦截</span>
+                  <button id="stop-task" class="ghost danger" type="button" hidden>停止</button>
+                  <button id="send-task" class="primary" type="submit">发送</button>
+                </div>
+              </form>
+            </div>
+          </div>
+          <small class="panel-signature">© 2026 沈菀 (Akusative) | AGPL-3.0</small>
+        </section>
+
+        <section id="tab-personas" class="panel tab-panel" aria-labelledby="nav-personas" hidden>
+          <div class="panel-heading">
+            <div><p class="eyebrow">SHARED PERSONA LIBRARY</p><h2>人设 / 角色</h2></div>
+            <button id="add-persona" class="primary" type="button">＋ 新建人设</button>
+          </div>
+          <div class="persona-intro">
+            <p>人设库由所有机器人账号共享；每个 QQ 可以单独选择当前人设。切换对话不会自动切换人设。</p>
+            <label>分类筛选
+              <select id="persona-filter"><option value="">全部分类</option></select>
+            </label>
+          </div>
+          <div id="persona-list" class="persona-grid"></div>
+          <small class="panel-signature">© 2026 沈菀 (Akusative) | AGPL-3.0</small>
+        </section>
+
+        <section id="tab-memory" class="panel tab-panel" aria-labelledby="nav-memory" hidden>
+          <div class="panel-heading">
+            <div><p class="eyebrow">PRIVATE MEMORY</p><h2>长期记忆</h2></div>
+            <button id="sync-memory" class="ghost" type="button">安全同步</button>
+          </div>
+          <div class="memory-mode-card">
+            <div><strong>自动总结规则</strong><p id="auto-memory-label">读取中…</p></div>
+            <span id="auto-memory-state" class="state-badge">读取中</span>
+          </div>
+          <form id="memory-path-form" class="memory-path-card">
+            <div>
+              <label for="memory-directory">记忆储存路径</label>
+              <p class="muted small">当前记忆库会自动显示在这里；更换后，Bridge 将从新目录读取和写入记忆。</p>
+            </div>
+            <div class="memory-path-row">
+              <input id="memory-directory" type="text" autocomplete="off" spellcheck="false" required />
+              <button class="ghost" type="submit">更改目录</button>
+            </div>
+            <p id="memory-path-note" class="muted small">目录必须位于 Bridge 私有工作区内，并包含现有的私人 memory-repo。</p>
+          </form>
+          <form id="memory-form" class="memory-form">
+            <label for="memory-input">手动生成记忆候选</label>
+            <div class="inline-form">
+              <input id="memory-input" maxlength="500" placeholder="例如：偏好：回复尽量简洁" required />
+              <button class="primary" type="submit">预览</button>
+            </div>
+            <p class="muted small">手动记忆仍需确认；自动记忆按设置条件运行，并在入库前再次过滤敏感信息。</p>
+          </form>
+          <div class="section-title"><h3>已确认记忆</h3><span id="memory-count" class="count-badge">0</span></div>
+          <div id="memory-list" class="memory-list"></div>
+          <small class="panel-signature">© 2026 沈菀 (Akusative) | AGPL-3.0</small>
+        </section>
+
+        <section id="tab-status" class="panel tab-panel" aria-labelledby="nav-status" hidden>
+          <div class="panel-heading"><div><p class="eyebrow">LOCAL STATUS</p><h2>运行状态</h2></div><button id="refresh-status" class="ghost" type="button">刷新</button></div>
+          <section id="codex-usage-card" class="codex-usage-card" aria-live="polite">
+            <div class="usage-heading">
+              <div><p class="eyebrow">CODEX USAGE</p><h3>Codex 可用额度</h3></div>
+              <small id="usage-updated-at" class="muted">正在读取 Codex 实时限额…</small>
+            </div>
+            <div class="usage-windows">
+              <article class="usage-window">
+                <div class="usage-label"><span>5 小时额度</span><strong id="usage-five-hour">--</strong></div>
+                <div class="progress-track large"><span id="usage-five-hour-progress"></span></div>
+                <small id="usage-five-hour-reset" class="muted">重置时间：--</small>
+              </article>
+              <article class="usage-window">
+                <div class="usage-label"><span>周额度</span><strong id="usage-weekly">--</strong></div>
+                <div class="progress-track large"><span id="usage-weekly-progress"></span></div>
+                <small id="usage-weekly-reset" class="muted">重置时间：--</small>
+              </article>
+            </div>
+            <p id="usage-source-note" class="form-hint">数据直接来自当前登录的 Codex；不会读取或显示登录凭证。</p>
+          </section>
+          <div id="status-grid" class="status-grid"></div>
+          <aside id="access-card" class="access-card" hidden>
+            <p class="eyebrow">LAN ACCESS</p>
+            <h3>局域网设备访问</h3>
+            <p class="muted">手机、MacBook 和 iPad 连入同一局域网后，可以使用下方地址访问。</p>
+            <div id="lan-urls" class="lan-urls"></div>
+            <div class="access-row"><span>远程密码</span><strong id="password-state">未设置</strong></div>
+          </aside>
+          <small class="panel-signature">© 2026 沈菀 (Akusative) | AGPL-3.0</small>
+        </section>
+
+        <section id="tab-settings" class="panel tab-panel" aria-labelledby="nav-settings" hidden>
+          <div class="panel-heading"><div><p class="eyebrow">LOCAL ADMIN</p><h2>设置</h2></div></div>
+          <div class="settings-grid">
+            <section class="settings-card">
+              <p class="eyebrow">STORAGE</p><h3>聊天记录容量</h3>
+              <p class="muted">仅统计当前机器人账号的本地聊天记录。达到 80% 时提醒，达到上限后停止接收普通新任务。</p>
+              <div class="capacity-summary"><strong id="capacity-percent">0%</strong><span id="capacity-detail">0 MB / 512 MB</span></div>
+              <div class="progress-track large"><span id="settings-progress"></span></div>
+              <form id="storage-form" class="inline-setting-form">
+                <label for="storage-limit">容量上限（MB）</label>
+                <input id="storage-limit" type="number" min="50" max="102400" step="1" required />
+                <button class="primary" type="submit">保存</button>
+              </form>
+            </section>
+            <section class="settings-card wide-card">
+              <p class="eyebrow">MEMORY MODE</p><h3>记忆方式</h3>
+              <p class="muted">自动记忆会按所选条件总结新增内容；手动记忆仅在你确认后写入。</p>
+              <form id="memory-settings-form" class="memory-settings-form">
+                <div class="memory-mode-options" role="radiogroup" aria-label="记忆方式">
+                  <label><input id="memory-mode-automatic" type="radio" name="memory-mode" value="automatic" checked /><span><strong>自动记忆</strong><small>按下方条件自动整理</small></span></label>
+                  <label><input id="memory-mode-manual" type="radio" name="memory-mode" value="manual" /><span><strong>手动记忆</strong><small>每次由用户确认写入</small></span></label>
+                </div>
+                <fieldset id="automatic-memory-options" class="automatic-memory-options">
+                  <legend>自动记忆条件</legend>
+                  <label class="check-setting"><input id="memory-on-switch" type="checkbox" checked /><span><strong>切换窗口时</strong><small>切出当前对话窗口后整理新增内容</small></span></label>
+                  <label class="check-setting token-setting"><input id="memory-on-token" type="checkbox" /><span><strong>按 Token（估算）</strong><small>达到建议窗口上下文后自动整理</small></span><input id="memory-token-threshold" type="number" min="1000" max="1000000" step="1000" value="120000" aria-label="Token 阈值" /></label>
+                  <p class="form-hint">Bridge 根据本地对话字符数保守估算 Token。Codex 上下文上限随模型变化，并不固定为 258K；默认建议在约 120K 时整理，给回复和工具输出留出余量。</p>
+                  <label class="check-setting schedule-setting"><input id="memory-on-schedule" type="checkbox" checked /><span><strong>按时间</strong><small>到达指定时区和时间点后整理</small></span><input id="memory-timezone" type="text" value="UTC+8" aria-label="自动记忆时区" /><input id="memory-time" type="time" value="00:00" aria-label="自动记忆时间点" /></label>
+                  <p class="form-hint">时区和时间点：默认 UTC+8 00:00，均可修改；也可填写 Asia/Shanghai 等 IANA 时区。</p>
+                </fieldset>
+                <div class="settings-form-footer"><span>当前状态：<strong id="settings-auto-memory">读取中</strong></span><button class="primary" type="submit">保存记忆设置</button></div>
+              </form>
+            </section>
+            <section id="local-settings" class="settings-card wide-card">
+              <p class="eyebrow">REMOTE PASSWORD</p><h3>远程访问密码</h3>
+              <p class="muted">首次创建或重置只能在桥接主机本地完成。密码不写日志，只保存加盐哈希。</p>
+              <form id="password-form" class="password-form">
+                <input id="new-password" type="password" autocomplete="new-password" minlength="12" maxlength="256" placeholder="新密码" required />
+                <input id="confirm-password" type="password" autocomplete="new-password" minlength="12" maxlength="256" placeholder="再次输入" required />
+                <button class="primary" type="submit">保存并让远程设备重新登录</button>
+              </form>
+              <div class="settings-divider"></div>
+              <div class="access-row"><span>远程可信会话</span><strong id="trusted-device-count">0</strong></div>
+              <button id="revoke-devices" class="ghost danger" type="button">撤销全部远程设备</button>
+            </section>
+            <div id="remote-settings" class="settings-card wide-card empty-state" hidden>安全设置只能在桥接主机打开 <code>127.0.0.1</code> 后修改。</div>
+          </div>
+          <small class="panel-signature">© 2026 沈菀 (Akusative) | AGPL-3.0</small>
+        </section>
+      </main>
+
+      <nav class="bottom-nav" aria-label="主导航">
+        <button id="nav-chat" class="nav-item active" data-tab="chat" type="button"><span class="nav-icon">◌</span><span>聊天</span></button>
+        <button id="nav-personas" class="nav-item" data-tab="personas" type="button"><span class="nav-icon">✦</span><span>人设</span></button>
+        <button id="nav-memory" class="nav-item" data-tab="memory" type="button"><span class="nav-icon">◇</span><span>记忆</span></button>
+        <button id="nav-status" class="nav-item" data-tab="status" type="button"><span class="nav-icon">●</span><span>状态</span></button>
+        <button id="nav-settings" class="nav-item" data-tab="settings" type="button"><span class="nav-icon">⚙</span><span>设置</span></button>
+      </nav>
+    </div>
+
+    <dialog id="persona-dialog">
+      <form id="persona-form" class="dialog-card">
+        <p class="eyebrow">PERSONA EDITOR</p><h2 id="persona-dialog-title">新建人设</h2>
+        <input id="persona-id" type="hidden" />
+        <label for="persona-category">分类</label>
+        <input id="persona-category" maxlength="40" placeholder="例如：日常 / 项目 / 剧情" required />
+        <label for="persona-name">人设名称</label>
+        <input id="persona-name" maxlength="80" placeholder="给这个角色起个好认的名字" required />
+        <label for="persona-content">核心设定（可选）</label>
+        <textarea id="persona-content" rows="5" placeholder="这里只写最核心的语气或行为边界；详细设定可以拆成多份文档。"></textarea>
+        <div class="persona-documents-editor">
+          <div class="document-editor-heading"><div><strong>人设资料文档</strong><p>可一次选择多份；保存后共同组成人设。</p></div><span id="persona-document-count" class="count-badge">0</span></div>
+          <div id="persona-document-list" class="document-list"></div>
+          <label class="file-drop" for="persona-documents">
+            <strong>＋ 选择多份文档</strong>
+            <span>TXT、Markdown、JSON、YAML、CSV、HTML、DOCX、PDF</span>
+          </label>
+          <input id="persona-documents" class="sr-only" type="file" multiple accept=".txt,.md,.markdown,.json,.jsonl,.yaml,.yml,.csv,.tsv,.xml,.html,.htm,.docx,.pdf,.css,.js,.ts,.tsx,.jsx,.py,.java,.c,.cpp,.h,.hpp,.ini,.toml,.log" />
+          <div id="pending-document-list" class="document-list pending-list"></div>
+        </div>
+        <p class="muted small">上传时先在内存中提取文字并检查凭证；通过后只保存本地规范化文本，不保存原始二进制文件。</p>
+        <div class="dialog-actions"><button id="persona-cancel" class="ghost" type="button">取消</button><button id="persona-save" class="primary" type="submit">保存人设与文档</button></div>
+      </form>
+    </dialog>
+
+    <dialog id="action-dialog">
+      <form method="dialog" class="dialog-card">
+        <p class="eyebrow">CONFIRM</p><h2 id="dialog-title">请确认</h2>
+        <div id="dialog-content" class="dialog-content"></div>
+        <div class="dialog-actions"><button id="dialog-cancel" class="ghost" value="cancel">取消</button><button id="dialog-confirm" class="primary" value="confirm">确认</button></div>
+      </form>
+    </dialog>
+
+    <div id="toast" class="toast" role="status" aria-live="polite" hidden></div>
+    <script type="module" src="/app.js"></script>
+  </body>
+</html>

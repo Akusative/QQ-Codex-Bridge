@@ -1,0 +1,8 @@
+node_modules/
+dist/
+coverage/
+.env
+logs/*.log
+data/*.json
+!data/.gitkeep
+!logs/.gitkeep
