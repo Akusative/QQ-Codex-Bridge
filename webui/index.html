@@ -185,7 +185,7 @@
         </section>
 
         <section id="tab-settings" class="panel tab-panel" aria-labelledby="nav-settings" hidden>
-          <div class="panel-heading"><div><p class="eyebrow">LOCAL ADMIN</p><h2>设置</h2></div></div>
+          <div class="panel-heading"><div><p class="eyebrow">REMOTE ADMIN</p><h2>云端管理</h2></div></div>
           <div class="settings-grid">
             <section class="settings-card">
               <p class="eyebrow">STORAGE</p><h3>聊天记录容量</h3>
@@ -197,6 +197,39 @@
                 <input id="storage-limit" type="number" min="50" max="102400" step="1" required />
                 <button class="primary" type="submit">保存</button>
               </form>
+            </section>
+            <section class="settings-card">
+              <p class="eyebrow">CODEX MODEL</p><h3>Codex 模型</h3>
+              <p class="muted">选择调用 Codex CLI 时使用的模型；修改后立即生效，无需重启。</p>
+              <form id="model-form" class="inline-setting-form">
+                <label for="codex-model">模型</label>
+                <select id="codex-model" required>
+                  <option value="gpt-5.4-mini">gpt-5.4-mini</option>
+                </select>
+                <label for="codex-reasoning-effort">推理等级</label>
+                <select id="codex-reasoning-effort" required>
+                  <option value="low">低</option>
+                  <option value="medium">中</option>
+                  <option value="high">高</option>
+                  <option value="xhigh">超高</option>
+                </select>
+                <button class="primary" type="submit">保存</button>
+              </form>
+            </section>
+            <section class="settings-card">
+              <p class="eyebrow">PLUGINS</p><h3>插件管理</h3>
+              <p class="muted">启用或禁用已安装的插件；修改后立即生效，无需重启。</p>
+              <div id="plugin-list" class="plugin-list"></div>
+            </section>
+            <section class="settings-card">
+              <p class="eyebrow">MESSAGE BUFFER</p><h3>QQ 连续消息合并</h3>
+              <p class="muted">每收到一条普通消息就重新计时；连续一段时间没有新消息后，再按顺序合并成一次 Codex 请求。</p>
+              <form id="message-buffer-form" class="inline-setting-form">
+                <label for="message-buffer-seconds">等待时间（秒）</label>
+                <input id="message-buffer-seconds" type="number" min="0" max="120" step="1" value="10" required />
+                <button class="primary" type="submit">保存</button>
+              </form>
+              <p class="form-hint">默认 10 秒；设为 0 可关闭合并。指令会立即执行，不参与合并。</p>
             </section>
             <section class="settings-card wide-card">
               <p class="eyebrow">MEMORY MODE</p><h3>记忆方式</h3>
@@ -217,10 +250,31 @@
                 <div class="settings-form-footer"><span>当前状态：<strong id="settings-auto-memory">读取中</strong></span><button class="primary" type="submit">保存记忆设置</button></div>
               </form>
             </section>
+            <section class="settings-card wide-card update-card">
+              <div class="update-heading">
+                <div><p class="eyebrow">SOFTWARE UPDATE</p><h3>软件更新</h3></div>
+                <span id="update-badge" class="count-badge">检查中</span>
+              </div>
+              <p id="update-message" class="muted">正在检查 GitHub 正式版本。</p>
+              <div class="update-version-row">
+                <div><small>当前版本</small><strong id="update-current-version">—</strong></div>
+                <span>→</span>
+                <div><small>最新版本</small><strong id="update-latest-version">—</strong></div>
+              </div>
+              <p id="update-release-notes" class="update-release-notes" hidden></p>
+              <div class="update-actions">
+                <a id="update-release-link" class="ghost button-link" href="#" target="_blank" rel="noopener noreferrer" hidden>查看发布说明</a>
+                <button id="check-update" class="ghost" type="button">检查更新</button>
+                <button id="apply-update" class="primary" type="button" hidden>一键更新</button>
+                <button id="restart-bridge" class="ghost danger" type="button">重启 Bridge</button>
+              </div>
+              <p class="form-hint update-hint">仅安装 GitHub 正式 Release，并校验 SHA-256；不会覆盖 .env、人设、聊天记录、工作区、记忆或登录设置。</p>
+            </section>
             <section id="local-settings" class="settings-card wide-card">
               <p class="eyebrow">REMOTE PASSWORD</p><h3>远程访问密码</h3>
-              <p class="muted">首次创建或重置只能在桥接主机本地完成。密码不写日志，只保存加盐哈希。</p>
+              <p class="muted">远程管理员可以修改密码；修改时需再次输入当前密码。密码不写日志，只保存加盐哈希。</p>
               <form id="password-form" class="password-form">
+                <input id="current-password" type="password" autocomplete="current-password" maxlength="256" placeholder="当前密码" />
                 <input id="new-password" type="password" autocomplete="new-password" minlength="12" maxlength="256" placeholder="新密码" required />
                 <input id="confirm-password" type="password" autocomplete="new-password" minlength="12" maxlength="256" placeholder="再次输入" required />
                 <button class="primary" type="submit">保存并让远程设备重新登录</button>
@@ -229,7 +283,6 @@
               <div class="access-row"><span>远程可信会话</span><strong id="trusted-device-count">0</strong></div>
               <button id="revoke-devices" class="ghost danger" type="button">撤销全部远程设备</button>
             </section>
-            <div id="remote-settings" class="settings-card wide-card empty-state" hidden>安全设置只能在桥接主机打开 <code>127.0.0.1</code> 后修改。</div>
           </div>
           <small class="panel-signature">© 2026 沈菀 (Akusative) | AGPL-3.0</small>
         </section>
@@ -266,6 +319,19 @@
         </div>
         <p class="muted small">上传时先在内存中提取文字并检查凭证；通过后只保存本地规范化文本，不保存原始二进制文件。</p>
         <div class="dialog-actions"><button id="persona-cancel" class="ghost" type="button">取消</button><button id="persona-save" class="primary" type="submit">保存人设与文档</button></div>
+      </form>
+    </dialog>
+
+    <dialog id="persona-document-dialog">
+      <form id="persona-document-form" class="dialog-card document-edit-card">
+        <p class="eyebrow">PERSONA DOCUMENT</p><h2>修改人设资料</h2>
+        <p id="persona-document-edit-name" class="muted small"></p>
+        <input id="persona-document-persona-id" type="hidden" />
+        <input id="persona-document-id" type="hidden" />
+        <label for="persona-document-text">资料内容</label>
+        <textarea id="persona-document-text" rows="22" spellcheck="false" required></textarea>
+        <p class="muted small">这里修改的是已提取并保存在本地的文本，不会改动原始文件。</p>
+        <div class="dialog-actions"><button id="persona-document-cancel" class="ghost" type="button">取消</button><button id="persona-document-save" class="primary" type="submit">保存修改</button></div>
       </form>
     </dialog>
 

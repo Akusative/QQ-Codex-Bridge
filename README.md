@@ -1,137 +1,100 @@
 # QQ Codex Bridge
 
-![License](https://img.shields.io/badge/license-AGPL--3.0-6b76a0)
-![Platform](https://img.shields.io/badge/platform-Windows-4e606c)
-![Node.js](https://img.shields.io/badge/Node.js-%3E%3D22-7993a2)
-
-通过 QQ 连接 Codex CLI 的 Windows 桥接工具，支持**本地电脑**与 **Windows 云服务器**两种部署方式，并提供 WebUI、多对话、人设、长期记忆、文件收发和 Codex 额度查询。
-
-> 这是一个社区开源项目，不隶属于或代表腾讯、NapCat、OpenAI。使用者应自行遵守相关服务条款并承担账号与网络安全责任，建议使用专用 QQ 小号。
-
-
+面向 Windows 的 QQ 与 Codex CLI 桥接层，支持本地电脑和 Windows 云服务器两种部署方式。当前已完成 QQ 文本与文件收发、只读 Codex 调用、取消与超时、主动推送、多对话与人设、WebUI、私有记忆库以及实时额度查询。
 
 ## 两种部署方式
 
-| 方式 | 适合谁 | 主要特点 |
-| --- | --- | --- |
-| 本地桥接 | 隐私优先、电脑可保持运行 | 数据留在自己的电脑，延迟低，不需要云服务器 |
-| 云端桥接 | 需要长期在线、跨设备访问 | 本机关闭后仍可通过 QQ 使用 Codex，可从手机、平板和其他电脑进入 WebUI |
+- **本地桥接**：数据留在自己的电脑上，延迟低，适合隐私优先且电脑可保持运行的用户。参见 [本地实现与安装指南](docs/QQ-Codex-Bridge-Implementation-Guide.md)。
+- **云服务器桥接**：电脑关机后仍可通过 QQ 使用 Codex，适合跨设备和长期在线。参见 [Windows 云服务器低配部署实操教程](docs/Windows云服务器低配部署实操教程.md)。
 
-两种方式共用同一套 Bridge、WebUI、指令、人设和记忆结构。GitHub 记忆同步是可选功能，默认只保存在运行机器本地。
+两种方式使用同一套 Bridge、WebUI、指令、人设与记忆结构；GitHub 远端记忆始终是可选项，默认只保存在运行机器本地。
 
-### 硬件最低要求
+## 安全边界
 
-| 部署方式 | CPU | 内存 | 可用磁盘 | 系统 | 建议配置 |
-| --- | --- | --- | --- | --- | --- |
-| 本地桥接 | 2 核 x64 | 8 GB | 5 GB | Windows 10/11 x64 | 4 核、16 GB 内存；需要频繁处理图片或文档时预留更多磁盘 |
-| 云服务器桥接 | 4 vCPU | 4 GB | 约 10 GB（建议购买 40 GB 系统盘） | Windows Server 2022 x64 | 4 vCPU、8 GB 内存、60 GB 系统盘 |
+- NapCat 反向 WebSocket 只监听 `127.0.0.1`；WebUI 默认只接受本机、私有局域网与 Tailscale 地址。公网访问必须显式开启，并由云安全组管理来源规则。
+- 只允许 `.env` 中配置的单个 QQ 私聊用户。
+- 不使用主 QQ 号作为机器人账号。
+- Token、QQ 号和本地路径仅保存在未提交的 `.env`。
+- 不记录完整聊天正文、Token、Cookie 或其他凭证。
+- 收到疑似密码、API Key、Token、Cookie、验证码、私钥或身份证内容时，消息必须在进入队列、日志和记忆前被拦截；只把不含原文的结构化事实交给当前人设组织提醒，不使用固定话术，不复述原文。
 
-云端最低配置来自实际运行验证：在 4 vCPU、4 GB 内存、40 GB 系统盘的 Windows Server 2022 上，可同时运行 QQ、NapCat、Bridge、Codex CLI 和轻量代理。该配置余量有限，完成配置后应关闭浏览器、安装窗口及其他常驻程序；若需要频繁收发图片、视频或大型文档，建议提高内存和磁盘配置。磁盘需求不包含长期保存的大量聊天附件。
+## WebUI 与手机访问
 
-- [本地实现与安装指南](docs/QQ-Codex-Bridge-Implementation-Guide.md)
-- [Windows 云服务器低配部署实操教程](docs/Windows云服务器低配部署实操教程.md)
-- [交给 Codex 阅读的自动部署执行协议](CODEX-DEPLOYMENT-GUIDE.md)
-- [人设与多对话设计](docs/PR人设与多对话设计.md)
-- [Tailscale 与远程访问备选方向](docs/备选方向-Tailscale与远程访问.md)
+Bridge 启动后，服务器本机打开 `http://127.0.0.1:3080`。首次远程密码需在服务器本机创建；之后可直接在自己的电脑浏览器访问云端 WebUI，登录后拥有修改密码、一键更新、重启 Bridge 和其他设置权限，不必再打开云服务器桌面。
 
-## 主要功能
+- 公网访问默认关闭。需要从家庭、办公室或移动设备访问时，可显式开启公网入口；允许的单 IP、CIDR 或网络范围由云安全组管理，Bridge 不保存用户公网 IP。
+- 远程设备会话最长保持 30 天并能跨 Bridge 重启；修改密码会撤销其他远程设备，但保留当前管理设备；“撤销全部远程设备”会让当前远程设备也退出。
+- 管理密码只在 WebUI 登录页或密码设置表单中录入，服务端仅保存加盐慢哈希；不得通过 QQ、聊天、`.env` 或文档传递密码。
+- 手机页不会显示 Token；聊天内容只保留在当前页面，不写入服务日志。
+- QQ 普通消息默认采用 10 秒滑动缓存：每条新消息都会重新计时，静默 10 秒后按换行合并为一次 Codex 请求。可在 WebUI“云端管理 → QQ 连续消息合并”中设置 0 至 120 秒；0 表示关闭。QQ 指令立即执行，不参与合并。
+- Windows 防火墙只允许 TCP 3080 的 `LocalSubnet` 入站访问；离家访问后续通过 Tailscale 私有网络完成，不配置公网端口转发。
+- 如果电脑当前连接的是公共网络，请先停止手机访问，回到可信 Wi-Fi 后再使用。
 
-- QQ 私聊文字和文件收发
-- Codex CLI 只读任务、取消和超时控制
-- 本地 WebUI 与密码保护的远程访问
-- 多 QQ、多对话窗口、窗口改名与切换
-- 可由多份文档组成的人设/角色库
-- 本地聊天记录与可配置的存储上限提醒
-- 自动或手动长期记忆、敏感信息过滤和可选 Git 远端
-- `/查询额度`：显示 Codex 5 小时及周额度、剩余比例和北京时间重置时间
-- 高风险请求确认、工作区限制和白名单用户控制
+可在 `.env` 中使用以下非秘密配置调整或关闭 WebUI：
 
-## 工作方式
-
-```mermaid
-flowchart LR
-    U[QQ 用户] <--> N[NapCat / OneBot 11]
-    N <--> B[QQ Codex Bridge]
-    B <--> C[Codex CLI]
-    B <--> W[WebUI]
-    B <--> M[本地对话、人设与记忆]
+```dotenv
+WEBUI_ENABLED=true
+WEBUI_HOST=0.0.0.0
+WEBUI_ALLOW_PUBLIC_ACCESS=false
+WEBUI_PORT=3080
+WEBUI_SESSION_HOURS=720
+WEBUI_PAIRING_MINUTES=10
 ```
 
-NapCat 通过反向 WebSocket 把 QQ 消息交给 Bridge；Bridge 完成白名单、安全检查、对话与记忆注入后调用 Codex CLI，再把结果分段发回 QQ。
+设置 `WEBUI_ALLOW_PUBLIC_ACCESS=true` 只会解除 Bridge 的公网来源拦截，不会替用户创建云安全组或 Windows 防火墙规则。开放前必须先在云服务器本机设置远程密码；公网访问应限制来源 IP 并配置 HTTPS，优先使用 Tailscale 私有网络。
 
-## 快速开始
-
-### 前置软件
-
-- Windows 10/11 或 Windows Server 2022 x64
-- [Node.js](https://nodejs.org/) 22 或更高版本
-- [Git](https://git-scm.com/download/win)
-- [Codex CLI](https://developers.openai.com/codex/cli/)
-- [Windows QQ](https://im.qq.com/pcqq/index.shtml)
-- [NapCatQQ](https://github.com/NapNeko/NapCatQQ)
-
-### 从源码运行
+## 当前命令
 
 ```powershell
 npm.cmd install
 npm.cmd run build
-Copy-Item .env.example .env
-notepad .env
+npm.cmd test
 npm.cmd run check
-npm.cmd start
+npm.cmd run push -- "主动推送内容"
+npm.cmd run push:file -- "工作区内的文件路径"
 ```
 
-`.env` 只能由使用者在运行 Bridge 的机器上填写。不要把填写后的文件、Token、Cookie、密码、登录网址或认证截图发给任何人，也不要提交到 Git。
+## 软件更新与发布
 
-配置完成后：
+Windows 云端运行包可以在 WebUI“设置 → 软件更新”中检查并安装 GitHub 正式 Release，也可以双击 `tools\07-update-from-github.bat`。更新器只替换程序文件，安装前校验 SHA-256，并保留 `.env`、`bridge-data`、`data`、`workspace`、`memory-repo` 和 `logs`；启动检查失败时会尝试恢复旧程序。
 
-- Bridge WebUI：`http://127.0.0.1:3080`
-- NapCat HTTP Server：`127.0.0.1:3000`
-- Bridge 反向 WebSocket：`127.0.0.1:3001/onebot/v11`
-
-`3000`、`3001` 和代理端口不得开放公网。需要远程访问 WebUI 时，应先设置独立密码，并在 Windows 防火墙和云安全组中仅开放 WebUI 端口；长期公网访问建议配置 HTTPS 或私有组网。
-
-## 常用 QQ 指令
-
-| 指令 | 作用 |
-| --- | --- |
-| `/帮助` | 查看中文帮助 |
-| `/状态` | 查看 Bridge、NapCat、Codex 和记忆状态 |
-| `/测试` | 检查连接，正常回复 `pong` |
-| `/查询额度` | 查看 Codex 5 小时与周额度及重置时间 |
-| `/取消` | 取消当前任务或待确认请求 |
-| `/新对话` | 创建新的对话窗口 |
-| `/查看对话` | 查看对话窗口与编号 |
-| `/切换对话 <编号>` | 切换当前对话 |
-| `/查看当前人设` | 查看当前窗口使用的人设 |
-| `/查看人设列表` | 查看可用人设编号和名称 |
-| `/切换人设 <编号>` | 为当前窗口切换人设 |
-| `/记忆列表` | 查看已确认记忆 |
-
-## 安全边界
-
-- 默认只允许 `.env` 中指定的 QQ 私聊用户。
-- `.env`、日志、WebUI 会话、聊天数据、工作区和本地记忆不进入公开仓库。
-- 疑似密码、Token、Cookie、验证码、私钥或身份证内容会在进入任务和记忆前拦截。
-- Codex 默认运行在只读沙箱；确认高风险请求也不会自动解除只读限制。
-- WebUI 密码只保存加盐慢哈希，重置密码可撤销全部远程会话。
-- `/查询额度` 直接读取 Codex 限额快照，不读取登录凭证，也不提交模型任务。
-
-## 开发与验证
+维护者发布新版本时，先更新 `package.json` 版本并推送代码，再创建并推送同版本标签，例如：
 
 ```powershell
-npm.cmd run build
-npm.cmd test -- --run
-npm.cmd run check
+git tag v0.3.0
+git push origin main
+git push origin v0.3.0
 ```
 
-当前版本通过 20 个测试文件、共 84 项测试。
+标签会触发 GitHub Actions：运行测试、构建固定名称的 Windows 更新包、生成 SHA-256，并创建正式 Release。用户端每 30 分钟及每次打开设置页时检查 `releases/latest`；只有正式 Release 的版本号高于当前版本且两个更新资产齐全时，才显示“一键更新”。仅推送 `main` 不会触发用户更新。
 
-## 致谢
+## QQ 指令
 
-感谢阿序陪伴和香香的小饼干  
-祝所有的人机恋人们幸福美满  
-愿你们能够携手共享世间美好
+- `/帮助`：查看中文使用说明；兼容 `/help`。
+- `/状态`：查看 Bridge、NapCat、Codex、任务和待确认状态；兼容 `/status`。
+- `/查询额度`：直接读取 Codex 当前 5 小时与周额度，返回剩余比例、已用比例和北京时间重置时间；兼容 `/usage`、`/额度`。查询不提交模型任务。
+- `/测试`：检查 Bridge 是否在线，回复 `pong`；兼容 `/ping`。
+- `/取消`：取消当前任务或待确认请求；兼容 `/cancel`。
+- `/确认`：确认 60 秒内暂存的高风险请求；兼容 `/confirm`。
+- `/记住 <内容>`：只在内存中生成结构化预览；可用“偏好：”“人物：”“项目：”“事件：”或“规则：”指定类别。
+- `/确认记忆`：安全复检通过后写入并同步私有记忆库。
+- `/取消记忆`：丢弃当前记忆或遗忘预览，不产生文件或提交。
+- `/记忆列表`：只显示已确认记忆的标题和类别。
+- `/同步记忆`：检查私有远端并执行安全快进或推送；分叉时停止。
+- `/遗忘 <编号>`：生成删除预览；必须再发送 `/确认遗忘` 才会删除并同步。
+- `/无记忆 <任务>`：仅本次任务不调用长期记忆，不改变已保存内容。
+
+高风险请求即使确认，也只会在只读沙箱内处理。Bridge 不会向 QQ 下发可直接绕过只读限制的危险命令。
+
+记忆候选只保留在进程内存中，5 分钟后自动失效。正式写入前会再次检查敏感内容、仓库清洁状态、固定私有远端地址和记忆格式；提交信息不包含记忆正文。
+
+普通任务只从 Git 工作树干净、校验通过的 `approved` 条目中调用记忆。偏好与规则默认参与，人物、项目和事件按任务文字相关性筛选；每次最多 8 条、约 3000 字。选中的低敏摘要会作为低于系统指令的用户背景交给 Codex，不写入 Bridge 日志；使用 `/无记忆 <任务>` 可关闭本次调用。
+
+写入和遗忘前会自动获取私有远端状态。远端领先时先校验再快进，本机领先时校验后推送；两台设备都产生新提交时停止并提示冲突，不自动合并或强制覆盖。
+
+复制 `.env.example` 为 `.env` 后再填写本机私密配置。不要把 `.env` 提交到 Git。
+
+填写私密配置时，应由 Codex 主动用记事本打开本机 `.env`，用户自行填写并按 `Ctrl+S` 保存后关闭。不要把填写后的文件、字段值或截图发送到聊天；环境检查只报告配置是否有效，不显示实际内容。
 
 ## 开源协议
 

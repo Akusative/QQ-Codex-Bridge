@@ -59,6 +59,23 @@ describe("BridgeWorkspaceStore", () => {
     expect(context).toContain("优先适配手机界面");
   });
 
+  it("reads and updates the locally extracted text of a persona document", async () => {
+    const root = await mkdtemp(join(tmpdir(), "bridge-workspace-"));
+    const store = new BridgeWorkspaceStore(root, { qq: "10001", nickname: "一号" });
+    await store.initialize();
+    const persona = await store.savePersona({ category: "日常", name: "测试角色", content: "" });
+    const document = await store.addPersonaDocument(persona.id, {
+      name: "profile.md",
+      sourceSizeBytes: 20,
+      text: "修改前的人设内容。",
+    });
+
+    expect((await store.readPersonaDocument(persona.id, document.id)).text).toBe("修改前的人设内容。");
+    const updated = await store.updatePersonaDocument(persona.id, document.id, "修改后的人设内容。\n\n动作描写独立成段。");
+    expect(updated.extractedCharacterCount).toBe("修改后的人设内容。\n\n动作描写独立成段。".length);
+    expect((await store.readPersonaDocument(persona.id, document.id)).text).toContain("动作描写独立成段");
+  });
+
   it("remembers a separate persona binding for each conversation", async () => {
     const root = await mkdtemp(join(tmpdir(), "bridge-workspace-"));
     const store = new BridgeWorkspaceStore(root, { qq: "10001", nickname: "一号" });
@@ -149,5 +166,14 @@ describe("BridgeWorkspaceStore", () => {
       timezone: "Asia/Shanghai",
       time: "08:30",
     });
+  });
+
+  it("defaults the local QQ message buffer to ten seconds and persists changes", async () => {
+    const root = await mkdtemp(join(tmpdir(), "bridge-workspace-"));
+    const store = new BridgeWorkspaceStore(root, { qq: "10001", nickname: "缓冲测试" });
+    await store.initialize();
+    expect(await store.messageBufferSettings()).toEqual({ waitSeconds: 10 });
+    await store.updateMessageBufferSettings({ waitSeconds: 4 });
+    expect(await store.messageBufferSettings()).toEqual({ waitSeconds: 4 });
   });
 });

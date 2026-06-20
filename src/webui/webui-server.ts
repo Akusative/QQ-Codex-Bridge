@@ -1,7 +1,7 @@
 import { createHash, randomBytes } from "node:crypto";
 import { readFile } from "node:fs/promises";
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
-import { networkInterfaces } from "node:os";
+import { homedir, networkInterfaces } from "node:os";
 import { isAbsolute, join, relative, resolve, sep } from "node:path";
 import type { Logger } from "pino";
 import type { AgentAdapter } from "../agent/agent-adapter.js";
@@ -33,6 +33,9 @@ import {
 import type { MemoryCandidate } from "../memory/memory-commands.js";
 import { formatAgentFailure } from "../utils/user-messages.js";
 import type { BridgeWorkspaceStore } from "../workspace/bridge-workspace-store.js";
+import type { SoftwareUpdateController } from "../update/github-update-service.js";
+import type { BridgeSystemController } from "../system/windows-system-control.js";
+import type { PluginInfo } from "../plugins/plugin-types.js";
 import {
   extractPersonaDocument,
   PERSONA_DOCUMENT_EXTENSIONS,
@@ -73,8 +76,16 @@ export interface WebUiServerOptions {
   workdir: string;
   taskTimeoutMs: number;
   getStatus: () => Promise<WebUiStatus>;
+  getModel?: () => string;
+  setModel?: (model: string) => void;
+  getReasoningEffort?: () => string;
+  setReasoningEffort?: (effort: string) => void;
+  getPlugins?: () => PluginInfo[];
+  setPluginEnabled?: (id: string, enabled: boolean) => Promise<void>;
   workspaceStore?: BridgeWorkspaceStore;
   personaDocumentExtractorScriptPath?: string;
+  softwareUpdate?: SoftwareUpdateController;
+  systemControl?: BridgeSystemController;
   autoTrustLoopback?: boolean;
 }
 
@@ -229,6 +240,39 @@ export class WebUiServer {
       return;
     }
 
+    if (request.method === "GET" && url.pathname === "/api/models") {
+      try {
+        const raw = await readFile(join(homedir(), ".codex", "models_cache.json"), "utf8");
+        const cache = JSON.parse(raw) as {
+          models?: Array<{
+            slug: string;
+            display_name: string;
+            visibility: string;
+            default_reasoning_level?: string;
+            supported_reasoning_levels?: Array<{ effort: string; description: string }>;
+          }>;
+        };
+        const models = (cache.models ?? [])
+          .filter((m) => m.visibility === "list")
+          .map((m) => ({
+            slug: m.slug,
+            displayName: m.display_name,
+            defaultReasoningLevel: m.default_reasoning_level,
+            supportedReasoningLevels: (m.supported_reasoning_levels ?? []).map(
+              (r: { effort: string; description: string }) => ({ effort: r.effort, description: r.description }),
+            ),
+          }));
+        this.sendJson(response, 200, { models });
+      } catch {
+        this.sendJson(response, 200, { models: [] });
+      }
+      return;
+    }
+    if (request.method === "GET" && url.pathname === "/api/plugins") {
+      const plugins = this.options.getPlugins?.() ?? [];
+      this.sendJson(response, 200, { plugins });
+      return;
+    }
     if (request.method === "GET" && url.pathname === "/api/status") {
       const status = await this.options.getStatus();
       this.sendJson(response, 200, {
@@ -242,10 +286,16 @@ export class WebUiServer {
       const memorySettings = this.options.workspaceStore
         ? await this.options.workspaceStore.memorySettings()
         : undefined;
+      const messageBufferSettings = this.options.workspaceStore
+        ? await this.options.workspaceStore.messageBufferSettings()
+        : undefined;
       this.sendJson(response, 200, {
         localAdmin: session.localAdmin,
         passwordConfigured: this.authStore.isPasswordConfigured(),
         trustedDeviceCount: this.authStore.sessionCount(),
+        model: this.options.getModel?.(),
+        reasoningEffort: this.options.getReasoningEffort?.(),
+        messageBuffer: messageBufferSettings,
         memory: memorySettings
           ? {
               ...memorySettings,
@@ -254,6 +304,44 @@ export class WebUiServer {
             }
           : undefined,
       });
+      return;
+    }
+    if (request.method === "GET" && url.pathname === "/api/update/status") {
+      if (!this.options.softwareUpdate) {
+        this.sendJson(response, 503, { error: "当前运行包没有启用软件更新服务。" });
+        return;
+      }
+      const force = url.searchParams.get("force") === "1";
+      this.sendJson(response, 200, await this.options.softwareUpdate.status(force));
+      return;
+    }
+    if (request.method === "POST" && url.pathname === "/api/update/apply") {
+      if (!this.options.softwareUpdate) {
+        this.sendJson(response, 503, { error: "当前运行包没有启用软件更新服务。" });
+        return;
+      }
+      try {
+        const result = await this.options.softwareUpdate.startUpdate();
+        this.sendJson(response, 202, result);
+      } catch (error) {
+        this.sendJson(response, 409, {
+          error: error instanceof Error ? error.message : "更新程序未能启动。",
+        });
+      }
+      return;
+    }
+    if (request.method === "POST" && url.pathname === "/api/system/restart") {
+      if (!this.options.systemControl) {
+        this.sendJson(response, 503, { error: "当前运行包没有启用一键重启服务。" });
+        return;
+      }
+      try {
+        this.sendJson(response, 202, await this.options.systemControl.restart());
+      } catch (error) {
+        this.sendJson(response, 409, {
+          error: error instanceof Error ? error.message : "重启程序未能启动。",
+        });
+      }
       return;
     }
     if (request.method === "GET" && url.pathname === "/api/workspace") {
@@ -326,6 +414,43 @@ export class WebUiServer {
         sourceSizeBytes: bytes.length,
         text,
       });
+      this.sendJson(response, 200, { document });
+      return;
+    }
+    if (request.method === "POST" && url.pathname === "/api/personas/documents/read") {
+      const body = await readJson(request);
+      const personaId = typeof body.personaId === "string" ? body.personaId : "";
+      const documentId = typeof body.documentId === "string" ? body.documentId : "";
+      if (!personaId || !documentId) {
+        this.sendJson(response, 400, { error: "人设文档编号无效。" });
+        return;
+      }
+      const result = await this.requireWorkspaceStore().readPersonaDocument(personaId, documentId);
+      this.sendJson(response, 200, result);
+      return;
+    }
+    if (request.method === "POST" && url.pathname === "/api/personas/documents/update") {
+      const body = await readJson(request, MAX_PERSONA_UPLOAD_BODY_BYTES);
+      const personaId = typeof body.personaId === "string" ? body.personaId : "";
+      const documentId = typeof body.documentId === "string" ? body.documentId : "";
+      const text = typeof body.text === "string" ? body.text.trim() : "";
+      if (!personaId || !documentId) {
+        this.sendJson(response, 400, { error: "人设文档编号无效。" });
+        return;
+      }
+      if (!text) {
+        this.sendJson(response, 400, { error: "人设文档内容不能为空。" });
+        return;
+      }
+      if (Buffer.byteLength(text, "utf8") > MAX_PERSONA_DOCUMENT_BYTES) {
+        this.sendJson(response, 413, { error: "单份人设文档需要小于 20 MB。" });
+        return;
+      }
+      const document = await this.requireWorkspaceStore().updatePersonaDocument(
+        personaId,
+        documentId,
+        text,
+      );
       this.sendJson(response, 200, { document });
       return;
     }
@@ -402,6 +527,52 @@ export class WebUiServer {
       this.sendJson(response, 200, { deleted: true });
       return;
     }
+    if (request.method === "POST" && url.pathname === "/api/settings/model") {
+      if (!this.options.setModel) {
+        this.sendJson(response, 503, { error: "当前运行模式不支持动态修改模型。" });
+        return;
+      }
+      const body = await readJson(request);
+      const model = typeof body.model === "string" ? body.model.trim() : "";
+      if (!model || model.length > 128) {
+        this.sendJson(response, 400, { error: "模型名称无效。" });
+        return;
+      }
+      this.options.setModel(model);
+      this.sendJson(response, 200, { updated: true, model });
+      return;
+    }
+    if (request.method === "POST" && url.pathname === "/api/settings/reasoning-effort") {
+      if (!this.options.setReasoningEffort) {
+        this.sendJson(response, 503, { error: "当前运行模式不支持动态修改推理等级。" });
+        return;
+      }
+      const body = await readJson(request);
+      const effort = typeof body.effort === "string" ? body.effort.trim() : "";
+      if (!["low", "medium", "high", "xhigh"].includes(effort)) {
+        this.sendJson(response, 400, { error: "推理等级无效，可选：low、medium、high、xhigh。" });
+        return;
+      }
+      this.options.setReasoningEffort(effort);
+      this.sendJson(response, 200, { updated: true, effort });
+      return;
+    }
+    if (request.method === "POST" && url.pathname === "/api/settings/plugin") {
+      if (!this.options.setPluginEnabled) {
+        this.sendJson(response, 503, { error: "当前运行模式不支持插件管理。" });
+        return;
+      }
+      const body = await readJson(request);
+      const id = typeof body.id === "string" ? body.id.trim() : "";
+      const enabled = body.enabled === true;
+      if (!id) {
+        this.sendJson(response, 400, { error: "插件编号无效。" });
+        return;
+      }
+      await this.options.setPluginEnabled(id, enabled);
+      this.sendJson(response, 200, { updated: true, id, enabled });
+      return;
+    }
     if (request.method === "POST" && url.pathname === "/api/settings/storage") {
       const body = await readJson(request);
       const storageLimitMb = Number(body.storageLimitMb);
@@ -411,6 +582,16 @@ export class WebUiServer {
       }
       await this.requireWorkspaceStore().updateStorageLimit(storageLimitMb);
       this.sendJson(response, 200, { updated: true });
+      return;
+    }
+    if (request.method === "POST" && url.pathname === "/api/settings/message-buffer") {
+      const waitSeconds = Number((await readJson(request)).waitSeconds);
+      if (!Number.isInteger(waitSeconds) || waitSeconds < 0 || waitSeconds > 120) {
+        this.sendJson(response, 400, { error: "消息合并等待时间需要是 0 到 120 秒的整数。" });
+        return;
+      }
+      await this.requireWorkspaceStore().updateMessageBufferSettings({ waitSeconds });
+      this.sendJson(response, 200, { updated: true, waitSeconds });
       return;
     }
     if (request.method === "POST" && url.pathname === "/api/settings/memory") {
@@ -439,10 +620,6 @@ export class WebUiServer {
       }
       const currentDirectory = this.options.memoryRepository.getRoot?.() ?? memoryDirectory;
       if (memoryDirectory !== resolve(currentDirectory)) {
-        if (!session.localAdmin) {
-          this.sendJson(response, 403, { error: "记忆目录只能在桥接主机的本地设置页更改。" });
-          return;
-        }
         if (
           !this.options.allowedWorkspaceRoot ||
           !isPathInside(this.options.allowedWorkspaceRoot, memoryDirectory)
@@ -480,26 +657,36 @@ export class WebUiServer {
       return;
     }
     if (request.method === "POST" && url.pathname === "/api/settings/password") {
-      if (!session.localAdmin) {
-        this.sendJson(response, 403, { error: "密码只能在桥接主机的本地设置页重置。" });
+      const body = await readJson(request);
+      const currentPassword =
+        typeof body.currentPassword === "string" ? body.currentPassword : "";
+      const password = typeof body.password === "string" ? body.password : "";
+      if (
+        !session.localAdmin &&
+        (!currentPassword || !(await this.authStore.verifyPassword(currentPassword)))
+      ) {
+        this.sendJson(response, 401, { error: "当前管理密码不正确。" });
         return;
       }
-      const body = await readJson(request);
-      const password = typeof body.password === "string" ? body.password : "";
       if (password.length < 12 || password.length > 256) {
         this.sendJson(response, 400, { error: "新密码需为 12 至 256 个字符，请使用只在这里使用的长密码。" });
         return;
       }
       await this.authStore.setPassword(password);
       this.revokeRemoteRuntimeSessions();
-      this.sendJson(response, 200, { updated: true, remoteSessionsRevoked: true });
+      if (!session.localAdmin) {
+        const created = this.createSession(false);
+        await this.authStore.addSession(hashToken(created.token), created.session.expiresAt);
+        this.setSessionCookie(response, created.token, request);
+      }
+      this.sendJson(response, 200, {
+        updated: true,
+        remoteSessionsRevoked: true,
+        currentDeviceKept: !session.localAdmin,
+      });
       return;
     }
     if (request.method === "POST" && url.pathname === "/api/settings/revoke") {
-      if (!session.localAdmin) {
-        this.sendJson(response, 403, { error: "远程设备只能在桥接主机上统一撤销。" });
-        return;
-      }
       await this.authStore.revokeSessions();
       this.revokeRemoteRuntimeSessions();
       this.sendJson(response, 200, { revoked: true });
@@ -866,7 +1053,7 @@ export class WebUiServer {
     if (!origin || !host) return false;
     try {
       const parsed = new URL(origin);
-      return parsed.protocol === "http:" && parsed.host === host;
+      return ["http:", "https:"].includes(parsed.protocol) && parsed.host === host;
     } catch {
       return false;
     }

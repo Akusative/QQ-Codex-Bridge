@@ -11,20 +11,23 @@ describe("chunkText", () => {
 });
 
 describe("chunkReplyText", () => {
-  it("groups a normal reply into two sentences per QQ message", () => {
-    expect(chunkReplyText("第一句。第二句！第三句？第四句。第五句。", 1_500, 2)).toEqual([
-      "第一句。第二句！",
-      "第三句？第四句。",
-      "第五句。",
+  it("lets blank lines from the model define QQ message boundaries", () => {
+    expect(chunkReplyText("第一句话。第二句话。\n\n第三句话。", 1_500)).toEqual([
+      "第一句话。第二句话。",
+      "第三句话。",
     ]);
+  });
+
+  it("does not split sentences that the model kept in one paragraph", () => {
+    expect(chunkReplyText("第一句话。第二句话。", 1_500)).toEqual(["第一句话。第二句话。"]);
   });
 
   it("keeps multiline command lists together", () => {
     const source = "/查看当前人设：查看当前窗口\n/查看人设列表：查看全部人设";
-    expect(chunkReplyText(source, 1_500, 2)).toEqual([source]);
+    expect(chunkReplyText(source, 1_500)).toEqual([source]);
   });
 
   it("still enforces the maximum OneBot message length", () => {
-    expect(chunkReplyText("abcdefghij", 4, 2)).toEqual(["abcd", "efgh", "ij"]);
+    expect(chunkReplyText("abcdefghij", 4)).toEqual(["abcd", "efgh", "ij"]);
   });
 });

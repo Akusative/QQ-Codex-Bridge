@@ -3,6 +3,7 @@ const appView = $("#app-view");
 const pairView = $("#pair-view");
 const actionDialog = $("#action-dialog");
 const personaDialog = $("#persona-dialog");
+const personaDocumentDialog = $("#persona-document-dialog");
 const toast = $("#toast");
 
 const state = {
@@ -12,6 +13,9 @@ const state = {
   confirmAction: null,
   cancelAction: null,
   workspacePoll: null,
+  updatePoll: null,
+  softwareUpdate: null,
+  settings: null,
   editingPersonaId: null,
   pendingPersonaFiles: [],
   selectNewPersonaAfterSave: false,
@@ -48,18 +52,25 @@ function bindEvents() {
   });
   $("#persona-form").addEventListener("submit", savePersona);
   $("#persona-documents").addEventListener("change", stagePersonaDocuments);
+  $("#persona-document-form").addEventListener("submit", savePersonaDocument);
+  $("#persona-document-cancel").addEventListener("click", () => personaDocumentDialog.close());
   $("#persona-filter").addEventListener("change", renderPersonas);
   $("#memory-form").addEventListener("submit", createMemoryDraft);
   $("#memory-path-form").addEventListener("submit", updateMemoryPath);
   $("#sync-memory").addEventListener("click", syncMemory);
   $("#refresh-status").addEventListener("click", refreshStatus);
+  $("#model-form").addEventListener("submit", updateModelSetting);
   $("#storage-form").addEventListener("submit", updateStorageLimit);
+  $("#message-buffer-form").addEventListener("submit", updateMessageBufferSettings);
   $("#memory-settings-form").addEventListener("submit", updateMemorySettings);
   document.querySelectorAll('input[name="memory-mode"]').forEach((input) => {
     input.addEventListener("change", updateAutoMemoryControls);
   });
   $("#password-form").addEventListener("submit", updatePassword);
   $("#revoke-devices").addEventListener("click", revokeDevices);
+  $("#check-update").addEventListener("click", () => refreshSoftwareUpdate(true));
+  $("#apply-update").addEventListener("click", confirmSoftwareUpdate);
+  $("#restart-bridge").addEventListener("click", confirmBridgeRestart);
   document.querySelectorAll(".nav-item").forEach((button) => {
     button.addEventListener("click", () => switchTab(button.dataset.tab));
   });
@@ -114,6 +125,9 @@ async function showApp() {
     state.workspacePoll = window.setInterval(() => {
       if (!document.hidden && !state.busy) void refreshWorkspace(true);
     }, 3000);
+  }
+  if (!state.updatePoll) {
+    state.updatePoll = window.setInterval(() => void refreshSoftwareUpdate(), 30 * 60_000);
   }
 }
 
@@ -454,8 +468,10 @@ function renderPersonaEditorDocuments() {
     list.append(documentRow(
       document.name,
       `${document.extractedCharacterCount.toLocaleString("zh-CN")} 字符 · 已保存在本地`,
-      "移除",
-      () => deletePersonaDocument(persona.id, document.id),
+      [
+        { label: "修改", className: "ghost compact", action: () => openPersonaDocumentEditor(persona.id, document.id) },
+        { label: "移除", className: "ghost compact danger", action: () => deletePersonaDocument(persona.id, document.id) },
+      ],
     ));
   }
   renderPendingPersonaDocuments();
@@ -468,18 +484,21 @@ function renderPendingPersonaDocuments() {
     list.append(documentRow(
       file.name,
       `${formatBytes(file.size)} · 等待保存`,
-      "取消",
-      () => {
-        state.pendingPersonaFiles = state.pendingPersonaFiles.filter((item) => item !== file);
-        renderPendingPersonaDocuments();
-      },
+      [{
+        label: "取消",
+        className: "ghost compact danger",
+        action: () => {
+          state.pendingPersonaFiles = state.pendingPersonaFiles.filter((item) => item !== file);
+          renderPendingPersonaDocuments();
+        },
+      }],
     ));
   });
   const existingCount = state.workspace?.personas?.find((item) => item.id === state.editingPersonaId)?.documents?.length || 0;
   $("#persona-document-count").textContent = String(existingCount + state.pendingPersonaFiles.length);
 }
 
-function documentRow(name, detail, actionLabel, action) {
+function documentRow(name, detail, actions) {
   const row = document.createElement("article");
   row.className = "document-row";
   const body = document.createElement("div");
@@ -488,8 +507,54 @@ function documentRow(name, detail, actionLabel, action) {
   const meta = document.createElement("small");
   meta.textContent = detail;
   body.append(title, meta);
-  row.append(body, button(actionLabel, "ghost compact danger", action));
+  row.append(body, ...actions.map((item) => button(item.label, item.className, item.action)));
   return row;
+}
+
+async function openPersonaDocumentEditor(personaId, documentId) {
+  try {
+    const result = await api("/api/personas/documents/read", {
+      method: "POST",
+      body: { personaId, documentId },
+    });
+    $("#persona-document-persona-id").value = personaId;
+    $("#persona-document-id").value = documentId;
+    $("#persona-document-edit-name").textContent = result.document.name;
+    $("#persona-document-text").value = result.text;
+    personaDocumentDialog.showModal();
+    $("#persona-document-text").focus();
+  } catch (error) { showToast(error.message); }
+}
+
+async function savePersonaDocument(event) {
+  event.preventDefault();
+  const saveButton = $("#persona-document-save");
+  const text = $("#persona-document-text").value;
+  if (!text.trim()) {
+    showToast("人设资料内容不能为空");
+    return;
+  }
+  saveButton.disabled = true;
+  saveButton.textContent = "正在保存…";
+  try {
+    await api("/api/personas/documents/update", {
+      method: "POST",
+      body: {
+        personaId: $("#persona-document-persona-id").value,
+        documentId: $("#persona-document-id").value,
+        text,
+      },
+    });
+    personaDocumentDialog.close();
+    await refreshWorkspace();
+    renderPersonaEditorDocuments();
+    showToast("人设资料已更新");
+  } catch (error) {
+    showToast(error.payload?.type === "sensitive-blocked" ? sensitiveNotice(error.payload.facts) : error.message);
+  } finally {
+    saveButton.disabled = false;
+    saveButton.textContent = "保存修改";
+  }
 }
 
 async function deletePersonaDocument(personaId, documentId) {
@@ -744,14 +809,209 @@ function switchTab(name) {
 async function refreshSettings() {
   try {
     const settings = await api("/api/settings");
-    $("#local-settings").hidden = !settings.localAdmin;
-    $("#remote-settings").hidden = settings.localAdmin;
+    state.settings = settings;
+    $("#local-settings").hidden = false;
+    $("#current-password").hidden = settings.localAdmin;
+    $("#current-password").required = !settings.localAdmin;
     $("#trusted-device-count").textContent = String(settings.trustedDeviceCount);
-    $("#memory-directory").readOnly = !settings.localAdmin;
-    $("#memory-path-form button[type=submit]").disabled = !settings.localAdmin;
-    $("#memory-path-note").textContent = settings.localAdmin
-      ? "目录必须位于 Bridge 私有工作区内，并包含现有的私人 memory-repo。"
-      : "出于安全考虑，记忆目录只能在桥接主机的 127.0.0.1 页面更改。";
+    try {
+      const { models } = await api("/api/models");
+      const modelSelect = $("#codex-model");
+      const effortSelect = $("#codex-reasoning-effort");
+      if (models.length > 0) {
+        modelSelect.innerHTML = models
+          .map((m) => `<option value="${m.slug}">${m.displayName}</option>`)
+          .join("");
+        modelSelect._modelsData = models;
+        modelSelect.addEventListener("change", () => updateReasoningOptions(modelSelect, effortSelect));
+      }
+      if (settings.model) modelSelect.value = settings.model;
+      updateReasoningOptions(modelSelect, effortSelect);
+      if (settings.reasoningEffort) effortSelect.value = settings.reasoningEffort;
+    } catch { /* 保留 HTML 里的兜底选项 */ }
+    try {
+      const { plugins } = await api("/api/plugins");
+      renderPluginList(plugins);
+    } catch { /* 忽略：插件管理不可用时保持空列表 */ }
+    $("#message-buffer-seconds").value = String(settings.messageBuffer?.waitSeconds ?? 10);
+    $("#memory-directory").readOnly = false;
+    $("#memory-path-form button[type=submit]").disabled = false;
+    $("#memory-path-note").textContent = "这里填写的是云服务器路径；目录必须位于 Bridge 私有工作区内，并包含现有的私人 memory-repo。";
+    void refreshSoftwareUpdate();
+  } catch (error) { showToast(error.message); }
+}
+
+function renderPluginList(plugins) {
+  const list = $("#plugin-list");
+  list.replaceChildren();
+  if (!plugins || plugins.length === 0) {
+    const empty = document.createElement("p");
+    empty.className = "muted";
+    empty.textContent = "暂无已安装插件。";
+    list.append(empty);
+    return;
+  }
+  for (const plugin of plugins) {
+    const row = document.createElement("article");
+    row.className = "plugin-item";
+    const main = document.createElement("div");
+    const title = document.createElement("strong");
+    title.textContent = `${plugin.name}（v${plugin.version}）`;
+    const desc = document.createElement("p");
+    desc.className = "muted";
+    desc.textContent = plugin.description || "";
+    main.append(title, desc);
+    const toggle = document.createElement("input");
+    toggle.type = "checkbox";
+    toggle.checked = plugin.enabled;
+    toggle.addEventListener("change", async () => {
+      try {
+        await api("/api/settings/plugin", {
+          method: "POST",
+          body: { id: plugin.id, enabled: toggle.checked },
+        });
+        showToast(`${plugin.name} ${toggle.checked ? "已启用" : "已禁用"}`);
+      } catch (error) {
+        toggle.checked = !toggle.checked; // 回滚
+        showToast(error.message);
+      }
+    });
+    row.append(main, toggle);
+    list.append(row);
+  }
+}
+
+async function refreshSoftwareUpdate(force = false) {
+  const checkButton = $("#check-update");
+  checkButton.disabled = true;
+  checkButton.textContent = "正在检查…";
+  try {
+    const status = await api(`/api/update/status${force ? "?force=1" : ""}`);
+    state.softwareUpdate = status;
+    renderSoftwareUpdate();
+    if (force) showToast(status.message);
+    return status;
+  } catch (error) {
+    state.softwareUpdate = null;
+    $("#update-message").textContent = error.message;
+    $("#update-badge").textContent = "不可用";
+    $("#apply-update").hidden = true;
+    $("#nav-settings").classList.remove("has-update");
+    if (force) showToast(error.message);
+    return null;
+  } finally {
+    checkButton.disabled = false;
+    checkButton.textContent = "检查更新";
+  }
+}
+
+function renderSoftwareUpdate() {
+  const status = state.softwareUpdate;
+  if (!status) return;
+  $("#update-current-version").textContent = `v${status.currentVersion}`;
+  $("#update-latest-version").textContent = status.latestVersion ? `v${status.latestVersion}` : "尚未发布";
+  $("#update-message").textContent = status.message;
+  $("#update-badge").textContent = status.updateAvailable
+    ? "有新版本"
+    : status.latestVersion
+      ? "已是最新"
+      : "尚未发布";
+  $("#update-badge").classList.toggle("update-available", status.updateAvailable);
+  $("#nav-settings").classList.toggle("has-update", status.updateAvailable);
+  const applyButton = $("#apply-update");
+  applyButton.hidden = !status.canApply;
+  applyButton.textContent = status.latestVersion ? `更新到 v${status.latestVersion}` : "一键更新";
+  const releaseLink = $("#update-release-link");
+  releaseLink.hidden = !status.releaseUrl;
+  releaseLink.href = status.releaseUrl || "#";
+  const notes = $("#update-release-notes");
+  notes.hidden = !status.releaseNotes;
+  notes.textContent = status.releaseNotes || "";
+}
+
+function confirmSoftwareUpdate() {
+  const status = state.softwareUpdate;
+  if (!status?.canApply || !status.latestVersion) return;
+  openDialog(
+    "安装软件更新",
+    `将更新到 v${status.latestVersion}。Bridge 会短暂离线，更新器会保留全部用户数据并在完成后自动重启。`,
+    async () => {
+      const applyButton = $("#apply-update");
+      applyButton.disabled = true;
+      applyButton.textContent = "正在启动更新…";
+      try {
+        const result = await api("/api/update/apply", { method: "POST", body: {} });
+        $("#update-message").textContent = result.message;
+        showToast(result.message);
+        window.setTimeout(waitForBridgeRestart, 4_000);
+      } catch (error) {
+        applyButton.disabled = false;
+        renderSoftwareUpdate();
+        showToast(error.message);
+      }
+    },
+  );
+}
+
+function confirmBridgeRestart() {
+  openDialog(
+    "重启 Bridge",
+    "Bridge 会短暂离线，通常几十秒内恢复。正在运行的任务会被中断。",
+    async () => {
+      const button = $("#restart-bridge");
+      button.disabled = true;
+      try {
+        const result = await api("/api/system/restart", { method: "POST", body: {} });
+        showToast(result.message);
+        window.setTimeout(waitForBridgeRestart, 2_500);
+      } catch (error) {
+        button.disabled = false;
+        showToast(error.message);
+      }
+    },
+  );
+}
+
+async function waitForBridgeRestart() {
+  const deadline = Date.now() + 3 * 60_000;
+  while (Date.now() < deadline) {
+    try {
+      const response = await fetch("/api/bootstrap", { cache: "no-store", credentials: "same-origin" });
+      if (response.ok) {
+        window.location.reload();
+        return;
+      }
+    } catch { /* Bridge 正在替换文件并重启。 */ }
+    await new Promise((resolve) => window.setTimeout(resolve, 2_000));
+  }
+  $("#update-message").textContent = "自动重连超时；请刷新页面或在服务器运行状态检查。";
+  showToast("更新后自动重连超时，请稍后刷新页面");
+}
+
+function updateReasoningOptions(modelSelect, effortSelect) {
+  const models = modelSelect._modelsData;
+  if (!models) return;
+  const current = models.find((m) => m.slug === modelSelect.value);
+  if (!current || !current.supportedReasoningLevels?.length) return;
+  const effortLabels = { low: "低", medium: "中", high: "高", xhigh: "超高" };
+  const prev = effortSelect.value;
+  effortSelect.innerHTML = current.supportedReasoningLevels
+    .map((r) => `<option value="${r.effort}">${effortLabels[r.effort] ?? r.effort}</option>`)
+    .join("");
+  if ([...effortSelect.options].some((o) => o.value === prev)) effortSelect.value = prev;
+  else effortSelect.value = current.defaultReasoningLevel ?? "medium";
+}
+
+async function updateModelSetting(event) {
+  event.preventDefault();
+  const model = $("#codex-model").value;
+  const effort = $("#codex-reasoning-effort").value;
+  try {
+    await Promise.all([
+      api("/api/settings/model", { method: "POST", body: { model } }),
+      api("/api/settings/reasoning-effort", { method: "POST", body: { effort } }),
+    ]);
+    showToast(`模型已切换为 ${model}，推理等级：${effort}`);
   } catch (error) { showToast(error.message); }
 }
 
@@ -761,6 +1021,18 @@ async function updateStorageLimit(event) {
     await api("/api/settings/storage", { method: "POST", body: { storageLimitMb: Number($("#storage-limit").value) } });
     await refreshWorkspace();
     showToast("聊天记录容量上限已保存");
+  } catch (error) { showToast(error.message); }
+}
+
+async function updateMessageBufferSettings(event) {
+  event.preventDefault();
+  const waitSeconds = Number($("#message-buffer-seconds").value);
+  try {
+    await api("/api/settings/message-buffer", {
+      method: "POST",
+      body: { waitSeconds },
+    });
+    showToast(waitSeconds === 0 ? "QQ 消息合并已关闭" : `QQ 消息将在静默 ${waitSeconds} 秒后合并发送`);
   } catch (error) { showToast(error.message); }
 }
 
@@ -798,11 +1070,12 @@ async function updateMemoryPath(event) {
 
 async function updatePassword(event) {
   event.preventDefault();
+  const currentPassword = $("#current-password").value;
   const password = $("#new-password").value;
   if (password !== $("#confirm-password").value) return showToast("两次输入的密码不一致");
   try {
-    await api("/api/settings/password", { method: "POST", body: { password } });
-    $("#new-password").value = $("#confirm-password").value = "";
+    await api("/api/settings/password", { method: "POST", body: { currentPassword, password } });
+    $("#current-password").value = $("#new-password").value = $("#confirm-password").value = "";
     showToast("密码已更新，全部远程设备需要重新登录");
     state.bootstrap = await api("/api/bootstrap");
     renderAccessCard();
@@ -815,6 +1088,10 @@ function revokeDevices() {
     try {
       await api("/api/settings/revoke", { method: "POST", body: {} });
       showToast("全部远程设备已撤销");
+      if (!state.settings?.localAdmin) {
+        showLogin("当前设备已撤销，请重新输入管理密码。");
+        return;
+      }
       await refreshSettings();
     } catch (error) { showToast(error.message); }
   });

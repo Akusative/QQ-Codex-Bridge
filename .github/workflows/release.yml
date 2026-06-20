@@ -1,0 +1,52 @@
+name: Publish Windows update
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: windows-latest
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+
+      - name: Install dependencies
+        run: npm.cmd ci
+
+      - name: Verify tag matches package version
+        shell: pwsh
+        run: |
+          $version = (Get-Content package.json -Raw | ConvertFrom-Json).version
+          if ($env:GITHUB_REF_NAME -ne "v$version") {
+            throw "Tag $env:GITHUB_REF_NAME does not match package version v$version"
+          }
+
+      - name: Run tests
+        run: npm.cmd test
+
+      - name: Build signed update inputs
+        shell: pwsh
+        run: ./scripts/build-update-package.ps1 -OutputDirectory ./release-artifacts
+
+      - name: Create GitHub Release
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create $env:GITHUB_REF_NAME `
+            ./release-artifacts/QQ-Codex-Bridge-Windows-Update.zip `
+            ./release-artifacts/QQ-Codex-Bridge-Windows-Update.zip.sha256 `
+            --verify-tag `
+            --generate-notes `
+            --title "QQ Codex Bridge $env:GITHUB_REF_NAME"

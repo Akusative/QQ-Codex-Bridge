@@ -59,6 +59,7 @@ interface AccountSettings {
   activePersonaId: string | null;
   activeConversationId: string | null;
   storageLimitMb: number;
+  messageBufferSeconds: number;
   memoryMode: "automatic" | "manual";
   autoMemoryOnConversationSwitch: boolean;
   autoMemoryOnTokenThreshold: boolean;
@@ -68,6 +69,7 @@ interface AccountSettings {
   autoMemoryTime: string;
   memoryDirectory: string;
   lastMemorySummaryAt: string | null;
+  pluginStates: Record<string, boolean>;
 }
 
 interface ConversationIndex {
@@ -82,6 +84,10 @@ export interface MemoryAutomationSettings {
   onSchedule: boolean;
   timezone: string;
   time: string;
+}
+
+export interface MessageBufferSettings {
+  waitSeconds: number;
 }
 
 export class BridgeWorkspaceStore {
@@ -148,6 +154,10 @@ export class BridgeWorkspaceStore {
         usagePercent: Math.min(100, Math.round(usageRatio * 1000) / 10),
         warning: usageRatio >= 0.8,
         full: usageRatio >= 1,
+      },
+      messageBuffer: {
+        waitSeconds: settings.messageBufferSeconds,
+        enabled: settings.messageBufferSeconds > 0,
       },
       autoMemory: {
         enabled: settings.memoryMode === "automatic",
@@ -263,6 +273,36 @@ export class BridgeWorkspaceStore {
     persona.updatedAt = new Date().toISOString();
     await this.writeJson(this.personasPath(), personas);
     return record;
+  }
+
+  async readPersonaDocument(
+    personaId: string,
+    documentId: string,
+  ): Promise<{ document: PersonaDocumentRecord; text: string }> {
+    const personas = await this.personas();
+    const persona = personas.find((item) => item.id === personaId);
+    if (!persona) throw new Error("人设不存在。");
+    const document = persona.documents.find((item) => item.id === documentId);
+    if (!document) throw new Error("人设文档不存在。");
+    const text = await readFile(this.personaDocumentPath(personaId, documentId), "utf8");
+    return { document, text };
+  }
+
+  async updatePersonaDocument(
+    personaId: string,
+    documentId: string,
+    text: string,
+  ): Promise<PersonaDocumentRecord> {
+    const personas = await this.personas();
+    const persona = personas.find((item) => item.id === personaId);
+    if (!persona) throw new Error("人设不存在。");
+    const document = persona.documents.find((item) => item.id === documentId);
+    if (!document) throw new Error("人设文档不存在。");
+    await this.writeText(this.personaDocumentPath(personaId, documentId), text);
+    document.extractedCharacterCount = text.length;
+    persona.updatedAt = new Date().toISOString();
+    await this.writeJson(this.personasPath(), personas);
+    return document;
   }
 
   async deletePersonaDocument(personaId: string, documentId: string): Promise<void> {
@@ -480,6 +520,28 @@ export class BridgeWorkspaceStore {
     await this.writeJson(this.settingsPath(), settings);
   }
 
+  async messageBufferSettings(): Promise<MessageBufferSettings> {
+    const settings = await this.settings();
+    return { waitSeconds: settings.messageBufferSeconds };
+  }
+
+  async updateMessageBufferSettings(input: MessageBufferSettings): Promise<void> {
+    const settings = await this.settings();
+    settings.messageBufferSeconds = input.waitSeconds;
+    await this.writeJson(this.settingsPath(), settings);
+  }
+
+  async pluginStates(): Promise<Record<string, boolean>> {
+    const settings = await this.settings();
+    return settings.pluginStates ?? {};
+  }
+
+  async updatePluginState(id: string, enabled: boolean): Promise<void> {
+    const settings = await this.settings();
+    settings.pluginStates = { ...(settings.pluginStates ?? {}), [id]: enabled };
+    await this.writeJson(this.settingsPath(), settings);
+  }
+
   async memorySettings(): Promise<MemoryAutomationSettings & { memoryDirectory: string }> {
     const settings = await this.settings();
     return {
@@ -588,6 +650,7 @@ export class BridgeWorkspaceStore {
       activePersonaId: null,
       activeConversationId: null,
       storageLimitMb: 256,
+      messageBufferSeconds: 10,
       memoryMode: "automatic",
       autoMemoryOnConversationSwitch: true,
       autoMemoryOnTokenThreshold: false,
@@ -597,6 +660,7 @@ export class BridgeWorkspaceStore {
       autoMemoryTime: "00:00",
       memoryDirectory: resolve(this.defaultMemoryDirectory),
       lastMemorySummaryAt: null,
+      pluginStates: {},
     };
   }
 

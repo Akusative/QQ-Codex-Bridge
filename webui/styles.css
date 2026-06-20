@@ -1103,8 +1103,28 @@ textarea:focus, input:focus, select:focus {
 .inline-setting-form label { color: var(--text-secondary); font-size: .8rem; font-weight: 700; }
 .inline-setting-form label + input { grid-column: 2; }
 
-.password-form { display: grid; grid-template-columns: 1fr 1fr auto; gap: 12px; margin-top: 20px; }
+.plugin-list { display: grid; gap: 12px; margin-top: 20px; }
+.plugin-item { display: flex; align-items: center; justify-content: space-between; gap: 16px; }
+.plugin-item > div { display: grid; gap: 4px; }
+.plugin-item p.muted { margin: 0; }
+
+.password-form { display: grid; grid-template-columns: 1fr 1fr 1fr auto; gap: 12px; margin-top: 20px; }
 .settings-divider { height: 1px; margin: 28px 0 16px; background: var(--line-strong); }
+
+.update-heading, .update-actions, .update-version-row { display: flex; align-items: center; }
+.update-heading { justify-content: space-between; gap: 16px; }
+.update-version-row { gap: 16px; margin: 18px 0; }
+.update-version-row > div { display: grid; gap: 4px; min-width: 120px; }
+.update-version-row small { color: var(--muted); font-size: .72rem; }
+.update-version-row strong { color: var(--text); font-size: 1.08rem; }
+.update-version-row > span { color: var(--muted); }
+.update-actions { justify-content: flex-end; flex-wrap: wrap; gap: 10px; margin-top: 18px; }
+.update-release-notes { max-height: 132px; overflow-y: auto; margin: 12px 0 0; padding: 13px 15px; border-radius: 14px; background: rgba(255,255,255,.6); color: var(--text-secondary); font-size: .8rem; line-height: 1.55; white-space: pre-wrap; }
+.update-hint { margin: 14px 0 0; }
+.count-badge.update-available { background: rgba(199, 79, 79, .12); color: var(--danger); }
+.button-link { display: inline-flex; align-items: center; justify-content: center; text-decoration: none; }
+.nav-item.has-update { position: relative; }
+.nav-item.has-update::after { content: ""; position: absolute; top: 8px; right: 13px; width: 7px; height: 7px; border-radius: 999px; background: var(--danger); box-shadow: 0 0 0 3px rgba(255,255,255,.86); }
 
 .memory-settings-form { display: grid; gap: 18px; margin-top: 18px; }
 .memory-mode-options { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
@@ -1275,6 +1295,13 @@ dialog::backdrop {
 .document-row small { margin-top: 2px; color: var(--muted); font-size: .7rem; font-weight: 500; }
 .document-row button { flex: 0 0 auto; }
 .pending-list:empty, .document-list:empty { display: none; }
+
+.document-edit-card { min-height: min(760px, calc(100vh - 40px)); }
+.document-edit-card textarea {
+  flex: 1 1 auto;
+  min-height: 360px;
+  font-family: ui-monospace, "Cascadia Code", "Microsoft YaHei UI", monospace;
+}
 
 /* Interactive Toast Notifications */
 .toast { 

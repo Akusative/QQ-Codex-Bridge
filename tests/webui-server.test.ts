@@ -16,6 +16,8 @@ import {
   type WebUiMemoryStore,
 } from "../src/webui/webui-server.js";
 import { BridgeWorkspaceStore } from "../src/workspace/bridge-workspace-store.js";
+import type { SoftwareUpdateController } from "../src/update/github-update-service.js";
+import type { BridgeSystemController } from "../src/system/windows-system-control.js";
 
 class FakeAgent implements AgentAdapter {
   runs: AgentRunOptions[] = [];
@@ -88,7 +90,10 @@ afterEach(async () => {
   await Promise.all(servers.splice(0).map((server) => server.stop()));
 });
 
-async function createFixture() {
+async function createFixture(options: {
+  softwareUpdate?: SoftwareUpdateController;
+  systemControl?: BridgeSystemController;
+} = {}) {
   const staticRoot = await mkdtemp(join(tmpdir(), "bridge-webui-"));
   await Promise.all([
     writeFile(join(staticRoot, "index.html"), "<!doctype html><title>Bridge</title>"),
@@ -113,7 +118,7 @@ async function createFixture() {
     agent,
     memoryRepository,
     allowedWorkspaceRoot: staticRoot,
-    workdir: "C:\\QQCodexBridge\\workspace",
+    workdir: "F:\\AI\\codex\\bridge\\workspace",
     taskTimeoutMs: 1_000,
     getStatus: async () => ({
       napCatConnected: true,
@@ -138,6 +143,8 @@ async function createFixture() {
       },
     }),
     workspaceStore,
+    softwareUpdate: options.softwareUpdate,
+    systemControl: options.systemControl,
   });
   await server.start();
   servers.push(server);
@@ -196,7 +203,7 @@ describe("WebUiServer", () => {
     expect(isWebUiRemoteAddressAllowed("203.0.113.10", true)).toBe(true);
   });
 
-  it("lets only localhost set a password and persists a remote login session", async () => {
+  it("lets an authenticated remote administrator change the password after reauthentication", async () => {
     const { baseUrl } = await createFixture();
     const { cookie } = await bootstrap(baseUrl);
     const changed = await post(baseUrl, "/api/settings/password", cookie, {
@@ -216,10 +223,64 @@ describe("WebUiServer", () => {
       localAdmin: false,
       passwordConfigured: true,
     });
-    const forbidden = await post(baseUrl, "/api/settings/password", remoteCookie, {
+    const rejected = await post(baseUrl, "/api/settings/password", remoteCookie, {
       password: "another-test-passphrase",
     });
-    expect(forbidden.status).toBe(403);
+    expect(rejected.status).toBe(401);
+    const remoteChange = await post(baseUrl, "/api/settings/password", remoteCookie, {
+      currentPassword: "test-only-long-passphrase",
+      password: "another-test-passphrase",
+    });
+    expect(remoteChange.status).toBe(200);
+    const refreshedCookie = remoteChange.headers.get("set-cookie")?.split(";", 1)[0] ?? "";
+    expect(refreshedCookie).toContain("bridge_session=");
+    expect((await fetch(`${baseUrl}/api/settings`, {
+      headers: { Cookie: refreshedCookie },
+    })).status).toBe(200);
+  });
+
+  it("checks and starts a verified software update through authenticated WebUI routes", async () => {
+    let starts = 0;
+    const softwareUpdate: SoftwareUpdateController = {
+      status: async () => ({
+        repository: "Akusative/QQ-Codex-Bridge",
+        currentVersion: "0.1.0",
+        latestVersion: "0.2.0",
+        updateAvailable: true,
+        canApply: true,
+        releaseUrl: "https://github.com/Akusative/QQ-Codex-Bridge/releases/tag/v0.2.0",
+        lastCheckedAt: "2026-06-20T00:00:00.000Z",
+        message: "发现可安装的新版本。",
+      }),
+      startUpdate: async () => {
+        starts += 1;
+        return { version: "0.2.0", message: "更新程序已启动。" };
+      },
+    };
+    const { baseUrl } = await createFixture({ softwareUpdate });
+    const { cookie } = await bootstrap(baseUrl);
+
+    const status = await fetch(`${baseUrl}/api/update/status?force=1`, { headers: { Cookie: cookie } });
+    expect(status.status).toBe(200);
+    expect(await status.json()).toMatchObject({ updateAvailable: true, canApply: true });
+    const apply = await post(baseUrl, "/api/update/apply", cookie, {});
+    expect(apply.status).toBe(202);
+    expect(starts).toBe(1);
+  });
+
+  it("restarts the Bridge through an authenticated WebUI route", async () => {
+    let restarts = 0;
+    const systemControl: BridgeSystemController = {
+      restart: async () => {
+        restarts += 1;
+        return { message: "restart scheduled" };
+      },
+    };
+    const { baseUrl } = await createFixture({ systemControl });
+    const { cookie } = await bootstrap(baseUrl);
+    const response = await post(baseUrl, "/api/system/restart", cookie, {});
+    expect(response.status).toBe(202);
+    expect(restarts).toBe(1);
   });
 
   it("saves memory mode, automatic triggers and a private workspace memory path", async () => {
@@ -248,6 +309,23 @@ describe("WebUiServer", () => {
       memoryDirectory: alternate,
     });
     expect(memoryRepository.getRoot()).toBe(alternate);
+  });
+
+  it("reads and updates the local QQ message buffer wait time", async () => {
+    const { baseUrl, workspaceStore } = await createFixture();
+    const { cookie } = await bootstrap(baseUrl);
+    const settings = await fetch(`${baseUrl}/api/settings`, { headers: { Cookie: cookie } });
+    expect(await settings.json()).toMatchObject({ messageBuffer: { waitSeconds: 10 } });
+
+    const updated = await post(baseUrl, "/api/settings/message-buffer", cookie, {
+      waitSeconds: 3,
+    });
+    expect(updated.status).toBe(200);
+    expect(await workspaceStore.messageBufferSettings()).toEqual({ waitSeconds: 3 });
+    const rejected = await post(baseUrl, "/api/settings/message-buffer", cookie, {
+      waitSeconds: 121,
+    });
+    expect(rejected.status).toBe(400);
   });
 
   it("rejects unauthenticated API calls and cross-origin writes", async () => {
@@ -299,6 +377,19 @@ describe("WebUiServer", () => {
       dataBase64: Buffer.from("遇到复杂问题时，先给出结论。", "utf8").toString("base64"),
     });
     expect(uploaded.status).toBe(200);
+    const document = (await uploaded.json() as any).document;
+    const readDocument = await post(baseUrl, "/api/personas/documents/read", cookie, {
+      personaId: persona.id,
+      documentId: document.id,
+    });
+    expect((await readDocument.json() as any).text).toContain("先给出结论");
+    const updated = await post(baseUrl, "/api/personas/documents/update", cookie, {
+      personaId: persona.id,
+      documentId: document.id,
+      text: "更新后先分段，再给出结论。",
+    });
+    expect(updated.status).toBe(200);
+    expect((await workspaceStore.readPersonaDocument(persona.id, document.id)).text).toBe("更新后先分段，再给出结论。");
     expect((await post(baseUrl, "/api/conversations/create", cookie, {})).status).toBe(200);
 
     const snapshot = await workspaceStore.snapshot() as any;
@@ -337,6 +428,31 @@ describe("WebUiServer", () => {
     });
     expect(response.status).toBe(422);
     expect((await workspaceStore.snapshot() as any).personas[0].documents).toHaveLength(0);
+  });
+
+  it("allows locally edited persona text to contain credential-like examples", async () => {
+    const { baseUrl, workspaceStore } = await createFixture();
+    const { cookie } = await bootstrap(baseUrl);
+    const saved = await post(baseUrl, "/api/personas/save", cookie, {
+      category: "测试",
+      name: "可编辑人设",
+      content: "",
+    });
+    const persona = (await saved.json() as any).persona;
+    const document = await workspaceStore.addPersonaDocument(persona.id, {
+      name: "profile.md",
+      sourceSizeBytes: 16,
+      text: "原始安全内容。",
+    });
+
+    const response = await post(baseUrl, "/api/personas/documents/update", cookie, {
+      personaId: persona.id,
+      documentId: document.id,
+      text: "password=example-only-value",
+    });
+
+    expect(response.status).toBe(200);
+    expect((await workspaceStore.readPersonaDocument(persona.id, document.id)).text).toBe("password=example-only-value");
   });
 
   it("stages high-risk tasks and only runs after explicit confirmation", async () => {

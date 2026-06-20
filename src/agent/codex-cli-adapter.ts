@@ -23,6 +23,8 @@ import type {
 
 export interface CodexCliAdapterOptions {
   command: string;
+  model: string;
+  reasoningEffort: string;
   allowedWorkspaceRoot: string;
   availabilityTimeoutMs?: number;
 }
@@ -113,9 +115,13 @@ export class CodexCliAdapter implements AgentAdapter {
   private readonly launch: CodexLaunch;
   private activeChild: ChildProcessWithoutNullStreams | undefined;
   private cancelRequested = false;
+  public model: string;
+  public reasoningEffort: string;
 
   constructor(private readonly options: CodexCliAdapterOptions) {
     this.launch = resolveCodexLaunch(options.command);
+    this.model = options.model;
+    this.reasoningEffort = options.reasoningEffort;
   }
 
   async checkAvailable(): Promise<{ ok: boolean; detail: string }> {
@@ -192,6 +198,10 @@ export class CodexCliAdapter implements AgentAdapter {
         ...this.launch.argsPrefix,
         "-a",
         "never",
+        "--model",
+        this.model,
+        "-c",
+        `model_reasoning_effort="${this.reasoningEffort}"`,
         "exec",
         "--ephemeral",
         "--sandbox",
