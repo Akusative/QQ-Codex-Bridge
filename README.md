@@ -8,7 +8,7 @@
 
 > 这是一个社区开源项目，不隶属于或代表腾讯、NapCat、OpenAI。使用者应自行遵守相关服务条款并承担账号与网络安全责任，建议使用专用 QQ 小号。
 
-![QQ Codex Bridge WebUI](docs/assets/webui-gemini-redesign-desktop.png)
+
 
 ## 两种部署方式
 
