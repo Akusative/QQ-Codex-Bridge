@@ -10,7 +10,7 @@ import {
   writeFile,
 } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { basename, join, relative, resolve, sep } from "node:path";
+import { basename, dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import { spawn } from "node:child_process";
 import { classifySensitiveContent } from "../security/sensitive-content-policy.js";
 import type { MemoryCandidate, MemoryCategory } from "./memory-commands.js";
@@ -156,7 +156,7 @@ export class MemoryRepository {
       ),
     );
     const absolutePath = resolve(this.root, correctedRelativePath);
-    assertInside(ready.approvedRoot, absolutePath);
+    await assertInside(ready.approvedRoot, absolutePath);
     await mkdir(resolve(this.root, "approved", categoryFolder(candidate.category)), {
       recursive: true,
     });
@@ -194,7 +194,7 @@ export class MemoryRepository {
     const ready = await this.ensureReady();
     await this.ensureClean();
     const absolutePath = resolve(this.root, entry.relativePath);
-    assertInside(ready.approvedRoot, absolutePath);
+    await assertInside(ready.approvedRoot, absolutePath);
     const stat = await lstat(absolutePath).catch(() => undefined);
     if (!stat?.isFile() || stat.isSymbolicLink()) throw new MemoryRepositoryError("invalid");
     const backup = await readFile(absolutePath, "utf8");
@@ -291,7 +291,7 @@ export class MemoryRepository {
 
   private async validateRevision(revision: string): Promise<void> {
     const temporaryRoot = await mkdtemp(join(tmpdir(), "qq-codex-memory-check-"));
-    assertInside(resolve(tmpdir()), temporaryRoot);
+    await assertInside(resolve(tmpdir()), temporaryRoot);
     let worktreeAdded = false;
     try {
       await this.runGit(["worktree", "add", "--detach", temporaryRoot, revision]);
@@ -307,7 +307,7 @@ export class MemoryRepository {
       if (worktreeAdded) {
         await this.runGit(["worktree", "remove", "--force", temporaryRoot], true);
       }
-      assertInside(resolve(tmpdir()), temporaryRoot);
+      await assertInside(resolve(tmpdir()), temporaryRoot);
       await rm(temporaryRoot, { recursive: true, force: true });
     }
   }
@@ -417,15 +417,41 @@ async function collectFiles(directory: string): Promise<string[]> {
   return files;
 }
 
-function assertInside(root: string, target: string): void {
-  const normalizedRoot = resolve(root);
-  const normalizedTarget = resolve(target);
+async function assertInside(root: string, target: string): Promise<void> {
+  const [canonicalRoot, canonicalTarget] = await Promise.all([
+    canonicalPathForComparison(root),
+    canonicalPathForComparison(target),
+  ]);
+  const normalizedRoot = normalizePathCase(canonicalRoot);
+  const normalizedTarget = normalizePathCase(canonicalTarget);
+  const relation = relative(normalizedRoot, normalizedTarget);
   if (
-    normalizedTarget !== normalizedRoot &&
-    !normalizedTarget.startsWith(`${normalizedRoot}${sep}`)
+    relation === ".." ||
+    relation.startsWith(`..${sep}`) ||
+    isAbsolute(relation)
   ) {
     throw new MemoryRepositoryError("invalid");
   }
+}
+
+async function canonicalPathForComparison(path: string): Promise<string> {
+  let current = resolve(path);
+  const missingSegments: string[] = [];
+
+  while (true) {
+    const canonical = await realpath(current).catch(() => undefined);
+    if (canonical) {
+      return resolve(canonical, ...missingSegments.reverse());
+    }
+    const parent = dirname(current);
+    if (parent === current) return resolve(path);
+    missingSegments.push(basename(current));
+    current = parent;
+  }
+}
+
+function normalizePathCase(path: string): string {
+  return process.platform === "win32" ? path.toLowerCase() : path;
 }
 
 function normalizeGitPath(path: string): string {

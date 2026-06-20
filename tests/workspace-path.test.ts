@@ -1,4 +1,4 @@
-import { mkdtemp, mkdir, rm, writeFile } from "node:fs/promises";
+import { mkdtemp, mkdir, realpath, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
@@ -21,7 +21,7 @@ describe("workspace file policy", () => {
     await mkdir(nested);
     await writeFile(file, "safe test", "utf8");
 
-    await expect(ensureFileInsideRoot(file, root)).resolves.toBe(file);
+    await expect(ensureFileInsideRoot(file, root)).resolves.toBe(await realpath(file));
   });
 
   it("rejects a file outside the root", async () => {
