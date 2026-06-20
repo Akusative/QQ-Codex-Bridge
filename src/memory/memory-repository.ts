@@ -263,6 +263,7 @@ export class MemoryRepository {
   private async ensureReady(): Promise<{ approvedRoot: string }> {
     const root = await realpath(this.root).catch(() => undefined);
     if (!root) throw new MemoryRepositoryError("unavailable");
+    this.root = root;
     const gitStat = await lstat(join(root, ".git")).catch(() => undefined);
     if (!gitStat?.isDirectory()) throw new MemoryRepositoryError("unavailable");
     const approvedRoot = await realpath(join(root, "approved")).catch(() => undefined);
