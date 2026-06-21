@@ -3,17 +3,20 @@ import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   MemoryRepository,
   MemoryRepositoryError,
 } from "../src/memory/memory-repository.js";
 
 const execFileAsync = promisify(execFile);
+
+// 该套件 spawn 大量真实 git 子进程，Windows/CI 上较慢；放宽超时避免假阳性超时。
+vi.setConfig({ testTimeout: 60_000, hookTimeout: 60_000 });
 const roots: string[] = [];
 
 afterEach(async () => {
-  await Promise.all(roots.splice(0).map((root) => rm(root, { recursive: true, force: true })));
+  await Promise.all(roots.splice(0).map((root) => rm(root, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 })));
 });
 
 async function fixture(): Promise<{
