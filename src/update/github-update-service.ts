@@ -18,9 +18,18 @@ export interface SoftwareUpdateStatus {
   message: string;
 }
 
+/** 更新器（update-bridge.ps1）写入 data/update-status.json 的运行记录。 */
+export interface LocalUpdateStatus {
+  state: string;       // checking | downloading | installing | succeeded | current | failed
+  message: string;
+  version: string;
+  updatedAt: string;
+}
+
 export interface SoftwareUpdateController {
   status(force?: boolean): Promise<SoftwareUpdateStatus>;
   startUpdate(): Promise<{ version: string; message: string }>;
+  localStatus(): Promise<LocalUpdateStatus | null>;
 }
 
 interface GitHubReleaseAsset {
@@ -169,6 +178,25 @@ export class GitHubUpdateService implements SoftwareUpdateController {
       version: status.latestVersion,
       message: "更新程序已启动；Bridge 将短暂离线并自动重启。",
     };
+  }
+
+  async localStatus(): Promise<LocalUpdateStatus | null> {
+    try {
+      const raw = await readFile(
+        join(this.options.installRoot, "data", "update-status.json"),
+        "utf8",
+      );
+      const parsed = JSON.parse(raw) as Partial<LocalUpdateStatus>;
+      if (typeof parsed.state !== "string") return null;
+      return {
+        state: parsed.state,
+        message: typeof parsed.message === "string" ? parsed.message : "",
+        version: typeof parsed.version === "string" ? parsed.version : "",
+        updatedAt: typeof parsed.updatedAt === "string" ? parsed.updatedAt : "",
+      };
+    } catch {
+      return null;
+    }
   }
 
   private cache(status: SoftwareUpdateStatus, release?: GitHubRelease): SoftwareUpdateStatus {

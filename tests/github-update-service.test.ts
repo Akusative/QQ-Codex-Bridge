@@ -75,4 +75,45 @@ describe("GitHubUpdateService", () => {
       message: "GitHub 尚未发布正式 Release。",
     });
   });
+
+  it("reads the updater's recorded run from data/update-status.json", async () => {
+    const root = await updaterRoot();
+    await mkdir(join(root, "data"), { recursive: true });
+    await writeFile(
+      join(root, "data", "update-status.json"),
+      JSON.stringify({
+        state: "succeeded",
+        message: "Update installed successfully.",
+        version: "0.3.1",
+        updatedAt: "2026-06-21T04:20:32.000Z",
+      }),
+      "utf8",
+    );
+    const service = new GitHubUpdateService({
+      installRoot: root,
+      currentVersion: "0.3.1",
+      repository: "Akusative/QQ-Codex-Bridge",
+      platform: "win32",
+      fetchImpl: async () => new Response("{}", { status: 404 }),
+    });
+
+    await expect(service.localStatus()).resolves.toEqual({
+      state: "succeeded",
+      message: "Update installed successfully.",
+      version: "0.3.1",
+      updatedAt: "2026-06-21T04:20:32.000Z",
+    });
+  });
+
+  it("returns null when no updater run has been recorded", async () => {
+    const service = new GitHubUpdateService({
+      installRoot: await updaterRoot(),
+      currentVersion: "0.3.1",
+      repository: "Akusative/QQ-Codex-Bridge",
+      platform: "win32",
+      fetchImpl: async () => new Response("{}", { status: 404 }),
+    });
+
+    await expect(service.localStatus()).resolves.toBeNull();
+  });
 });

@@ -312,7 +312,9 @@ export class WebUiServer {
         return;
       }
       const force = url.searchParams.get("force") === "1";
-      this.sendJson(response, 200, await this.options.softwareUpdate.status(force));
+      const status = await this.options.softwareUpdate.status(force);
+      const lastRun = await this.options.softwareUpdate.localStatus();
+      this.sendJson(response, 200, { ...status, lastRun });
       return;
     }
     if (request.method === "POST" && url.pathname === "/api/update/apply") {

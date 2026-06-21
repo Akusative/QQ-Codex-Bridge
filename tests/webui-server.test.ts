@@ -256,13 +256,23 @@ describe("WebUiServer", () => {
         starts += 1;
         return { version: "0.2.0", message: "更新程序已启动。" };
       },
+      localStatus: async () => ({
+        state: "succeeded",
+        message: "Update installed successfully.",
+        version: "0.2.0",
+        updatedAt: "2026-06-20T00:01:00.000Z",
+      }),
     };
     const { baseUrl } = await createFixture({ softwareUpdate });
     const { cookie } = await bootstrap(baseUrl);
 
     const status = await fetch(`${baseUrl}/api/update/status?force=1`, { headers: { Cookie: cookie } });
     expect(status.status).toBe(200);
-    expect(await status.json()).toMatchObject({ updateAvailable: true, canApply: true });
+    expect(await status.json()).toMatchObject({
+      updateAvailable: true,
+      canApply: true,
+      lastRun: { state: "succeeded", version: "0.2.0" },
+    });
     const apply = await post(baseUrl, "/api/update/apply", cookie, {});
     expect(apply.status).toBe(202);
     expect(starts).toBe(1);

@@ -1121,6 +1121,8 @@ textarea:focus, input:focus, select:focus {
 .update-actions { justify-content: flex-end; flex-wrap: wrap; gap: 10px; margin-top: 18px; }
 .update-release-notes { max-height: 132px; overflow-y: auto; margin: 12px 0 0; padding: 13px 15px; border-radius: 14px; background: rgba(255,255,255,.6); color: var(--text-secondary); font-size: .8rem; line-height: 1.55; white-space: pre-wrap; }
 .update-hint { margin: 14px 0 0; }
+.update-last-run { margin: 12px 0 0; }
+.update-last-run.update-failed { color: var(--danger); }
 .count-badge.update-available { background: rgba(199, 79, 79, .12); color: var(--danger); }
 .button-link { display: inline-flex; align-items: center; justify-content: center; text-decoration: none; }
 .nav-item.has-update { position: relative; }

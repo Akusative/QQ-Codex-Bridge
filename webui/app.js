@@ -927,6 +927,34 @@ function renderSoftwareUpdate() {
   const notes = $("#update-release-notes");
   notes.hidden = !status.releaseNotes;
   notes.textContent = status.releaseNotes || "";
+  const lastRun = $("#update-last-run");
+  if (status.lastRun) {
+    lastRun.hidden = false;
+    lastRun.textContent = formatLastRun(status.lastRun);
+    lastRun.classList.toggle("update-failed", status.lastRun.state === "failed");
+  } else {
+    lastRun.hidden = true;
+  }
+}
+
+function formatLastRun(run) {
+  const labels = {
+    checking: "检查中",
+    downloading: "下载中",
+    installing: "安装中",
+    succeeded: "成功",
+    current: "已是最新",
+    failed: "失败",
+  };
+  const label = labels[run.state] || run.state;
+  const version = run.version ? ` → v${run.version}` : "";
+  const detail = run.message ? `：${run.message}` : "";
+  let when = "";
+  if (run.updatedAt) {
+    const parsed = new Date(run.updatedAt);
+    if (!Number.isNaN(parsed.getTime())) when = `（${parsed.toLocaleString()}）`;
+  }
+  return `上次更新：${label}${version}${detail}${when}`;
 }
 
 function confirmSoftwareUpdate() {
