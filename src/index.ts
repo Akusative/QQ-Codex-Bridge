@@ -18,6 +18,7 @@ import { PluginRegistry } from "./plugins/plugin-registry.js";
 import { exampleEchoPlugin } from "./plugins/example-echo-plugin.js";
 import { chunkReplyText } from "./utils/text.js";
 import { WebUiServer } from "./webui/webui-server.js";
+import { prepareWebUiAuthStorePath } from "./webui/webui-auth-path.js";
 import { WindowsBridgeSystemControl } from "./system/windows-system-control.js";
 import { BridgeWorkspaceStore } from "./workspace/bridge-workspace-store.js";
 import { GitHubUpdateService } from "./update/github-update-service.js";
@@ -150,6 +151,7 @@ try {
       repository: "Akusative/QQ-Codex-Bridge",
     });
     const systemControl = new WindowsBridgeSystemControl({ installRoot: process.cwd() });
+    const authStorePath = await prepareWebUiAuthStorePath(process.cwd());
     webUiServer = new WebUiServer({
       host: config.WEBUI_HOST,
       port: config.WEBUI_PORT,
@@ -157,7 +159,7 @@ try {
       sessionTtlMs: config.WEBUI_SESSION_HOURS * 60 * 60_000,
       pairingTtlMs: config.WEBUI_PAIRING_MINUTES * 60_000,
       staticRoot: fileURLToPath(new URL("../webui/", import.meta.url)),
-      authStorePath: fileURLToPath(new URL("../data/webui-auth.json", import.meta.url)),
+      authStorePath,
       logger,
       agent,
       memoryRepository,

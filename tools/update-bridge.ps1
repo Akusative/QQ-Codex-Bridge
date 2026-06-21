@@ -104,6 +104,15 @@ function Stop-RunningBridge {
   $process.WaitForExit()
 }
 
+function Migrate-LegacyWebUiAuth {
+  $legacyPath = Join-Path $InstallRoot "dist\data\webui-auth.json"
+  $persistentPath = Join-Path $InstallRoot "data\webui-auth.json"
+  if ((Test-Path -LiteralPath $legacyPath) -and -not (Test-Path -LiteralPath $persistentPath)) {
+    New-Item -ItemType Directory -Path (Split-Path -Parent $persistentPath) -Force | Out-Null
+    Copy-Item -LiteralPath $legacyPath -Destination $persistentPath
+  }
+}
+
 function Copy-ProgramItems {
   param([string]$Source, [string]$Destination, [switch]$Replace)
   New-Item -ItemType Directory -Path $Destination -Force | Out-Null
@@ -199,6 +208,7 @@ try {
   Save-UpdateStatus "installing" "Backing up program files and installing the update." ([string]$releaseVersion)
   Stop-RunningBridge
   $BridgeWasStopped = $true
+  Migrate-LegacyWebUiAuth
   Copy-ProgramItems -Source $InstallRoot -Destination $BackupRoot
   Copy-ProgramItems -Source $StagingRoot -Destination $InstallRoot -Replace
 
