@@ -147,7 +147,13 @@
             </div>
             <p class="muted small">手动记忆仍需确认；自动记忆按设置条件运行，并在入库前再次过滤敏感信息。</p>
           </form>
-          <div class="section-title"><h3>永久记忆</h3></div>
+          <div class="section-title memory-window-title">
+            <h3>永久记忆</h3>
+            <label class="memory-window-pick">窗口
+              <select id="memory-window"></select>
+            </label>
+          </div>
+          <p class="muted small memory-hint">记忆按聊天窗口隔离；切换上面的窗口查看/编辑该窗口的记忆。删除窗口会一并删除其记忆。</p>
           <div class="permanent-memory-card">
             <p class="muted small">长期稳定、你完全掌控的核心记忆。新对话开始会带上一次，相关时也会带上。修改需点保存确认。</p>
             <textarea id="permanent-memory" class="permanent-memory-box" rows="6" readonly placeholder="还没有永久记忆，点「编辑」添加"></textarea>
@@ -158,7 +164,7 @@
             </div>
           </div>
           <div class="section-title"><h3>非永久记忆</h3><span id="memory-count" class="count-badge">0</span></div>
-          <p class="muted small">按时间排列（最早在上、越久越少被调用）。可就地编辑或遗忘。</p>
+          <p class="muted small memory-hint">按时间排列（最早在上、越久越少被调用）。可就地编辑或遗忘。</p>
           <div id="memory-list" class="memory-list"></div>
           <small class="panel-signature">© 2026 沈菀 (Akusative) | AGPL-3.0</small>
         </section>

@@ -58,4 +58,35 @@ describe("MemoryDecayStore", () => {
     await new MemoryDecayStore(path).touch(["a"]);
     expect(await new MemoryDecayStore(path).get("a")).toBeDefined();
   });
+
+  describe("窗口归属", () => {
+    it("assign 打标签，pathsForConversation 按窗口取回", async () => {
+      const store = await makeStore();
+      await store.assign("p1", "conv-A");
+      await store.assign("p2", "conv-A");
+      await store.assign("p3", "conv-B");
+      expect((await store.pathsForConversation("conv-A")).sort()).toEqual(["p1", "p2"]);
+      expect(await store.pathsForConversation("conv-B")).toEqual(["p3"]);
+    });
+
+    it("assign 保留已有衰减状态；touch 保留窗口归属", async () => {
+      const store = await makeStore();
+      await store.touch(["p1"]);
+      await store.assign("p1", "conv-A");
+      const after = await store.get("p1");
+      expect(after?.referenceCount).toBe(1);
+      expect(after?.conversationId).toBe("conv-A");
+      await store.touch(["p1"]);
+      expect((await store.get("p1"))?.conversationId).toBe("conv-A");
+    });
+
+    it("removeMany 清掉这些项", async () => {
+      const store = await makeStore();
+      await store.assign("p1", "conv-A");
+      await store.assign("p2", "conv-A");
+      await store.removeMany(["p1"]);
+      expect(await store.get("p1")).toBeUndefined();
+      expect(await store.get("p2")).toBeDefined();
+    });
+  });
 });

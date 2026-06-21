@@ -1013,10 +1013,14 @@ textarea:focus, input:focus, select:focus {
 .memory-actions { display: flex; gap: 8px; flex-shrink: 0; align-items: center; }
 .memory-edit { width: 100%; margin-top: 6px; resize: vertical; font: inherit; padding: 8px 10px; border: 1px solid var(--line-strong); border-radius: 10px; background: #fff; }
 
-.permanent-memory-card { padding: 4px 32px 8px; }
+.permanent-memory-card { margin: 4px 32px 8px; padding: 16px 18px; border: 1px solid var(--line-strong); border-radius: 16px; background: rgba(255,255,255,.55); box-shadow: var(--shadow-sm); }
 .permanent-memory-box { width: 100%; resize: vertical; font: inherit; padding: 12px 14px; border: 1px solid var(--line-strong); border-radius: 14px; background: rgba(255,255,255,.65); color: var(--text); line-height: 1.6; }
 .permanent-memory-box[readonly] { background: rgba(255,255,255,.4); }
 .permanent-memory-actions { display: flex; gap: 8px; margin-top: 10px; }
+.memory-hint { padding: 0 32px; margin: 0 0 4px; }
+.memory-window-title { justify-content: space-between; }
+.memory-window-pick { display: inline-flex; align-items: center; gap: 8px; font-size: .82rem; color: var(--text-secondary); font-weight: 700; }
+.memory-window-pick select { font: inherit; padding: 6px 10px; border: 1px solid var(--line-strong); border-radius: 10px; background: #fff; max-width: 240px; }
 
 .empty-state { 
   padding: 48px 32px; 

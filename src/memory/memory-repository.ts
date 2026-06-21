@@ -28,6 +28,7 @@ export interface ApprovedMemoryEntry extends MemoryListEntry {
 
 export interface MemoryMutationResult {
   synced: boolean;
+  relativePath?: string;
 }
 
 export interface MemorySyncResult {
@@ -180,12 +181,12 @@ export class MemoryRepository {
       throw new MemoryRepositoryError("invalid");
     }
 
-    if (!this.expectedRemote) return { synced: true };
+    if (!this.expectedRemote) return { synced: true, relativePath: correctedRelativePath };
     try {
       await this.runGit(["push", "origin", "main"]);
-      return { synced: true };
+      return { synced: true, relativePath: correctedRelativePath };
     } catch {
-      return { synced: false };
+      return { synced: false, relativePath: correctedRelativePath };
     }
   }
 

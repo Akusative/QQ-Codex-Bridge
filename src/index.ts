@@ -81,6 +81,7 @@ try {
     logger,
     config.CODEX_WORKDIR,
     config.TASK_TIMEOUT_SECONDS * 1_000,
+    decayStore,
   );
   let eventServer: OneBotEventServer;
   let pipeline: MessagePipeline;
@@ -168,6 +169,7 @@ try {
       logger,
       agent,
       memoryRepository,
+      decayStore,
       allowedWorkspaceRoot: config.ALLOWED_WORKSPACE_ROOT,
       autoMemory,
       workdir: config.CODEX_WORKDIR,

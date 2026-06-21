@@ -9,6 +9,7 @@ const toast = $("#toast");
 const state = {
   bootstrap: null,
   workspace: null,
+  memoryWindowId: null,
   busy: false,
   confirmAction: null,
   cancelAction: null,
@@ -656,12 +657,38 @@ async function createMemoryDraft(event) {
 }
 
 async function refreshMemories() {
+  if (!state.workspace) {
+    try { state.workspace = await api("/api/workspace"); } catch { /* 忽略 */ }
+  }
+  renderMemoryWindowSelect();
   await Promise.all([refreshPermanentMemory(), refreshNonPermanentMemories()]);
+}
+
+function renderMemoryWindowSelect() {
+  const select = $("#memory-window");
+  if (!select) return;
+  const conversations = state.workspace?.conversations || [];
+  const activeId = state.workspace?.activeConversation?.id || "";
+  if (!state.memoryWindowId || !conversations.some((c) => c.id === state.memoryWindowId)) {
+    state.memoryWindowId = activeId || conversations[0]?.id || "";
+  }
+  if (conversations.length) {
+    select.replaceChildren(...conversations.map((c) => new Option(c.name, c.id)));
+    select.value = state.memoryWindowId;
+  } else {
+    select.replaceChildren(new Option("尚无窗口", ""));
+  }
+}
+
+function memoryWindowQuery() {
+  return state.memoryWindowId
+    ? `?conversationId=${encodeURIComponent(state.memoryWindowId)}`
+    : "";
 }
 
 async function refreshPermanentMemory() {
   try {
-    const { text } = await api("/api/memory/permanent");
+    const { text } = await api(`/api/memory/permanent${memoryWindowQuery()}`);
     const box = $("#permanent-memory");
     box._saved = text || "";
     if (!box.dataset.editing) box.value = text || "";
@@ -670,7 +697,7 @@ async function refreshPermanentMemory() {
 
 async function refreshNonPermanentMemories() {
   try {
-    const result = await api("/api/memories");
+    const result = await api(`/api/memories${memoryWindowQuery()}`);
     const list = $("#memory-list");
     list.replaceChildren();
     $("#memory-count").textContent = String(result.entries.length);
@@ -728,7 +755,7 @@ function startMemoryEdit(article, entry, textElement) {
     if (value.length < 2) { showToast("记忆内容太短"); return; }
     save.disabled = true;
     try {
-      const result = await api("/api/memory/update", { method: "POST", body: { index: entry.index, text: value } });
+      const result = await api("/api/memory/update", { method: "POST", body: { index: entry.index, text: value, conversationId: state.memoryWindowId } });
       showToast(result.synced ? "记忆已更新并同步" : "记忆已更新，远端同步待处理");
       await refreshNonPermanentMemories();
     } catch (error) { save.disabled = false; showToast(error.message); }
@@ -746,6 +773,11 @@ function bindPermanentMemory() {
   const edit = $("#permanent-edit");
   const save = $("#permanent-save");
   const cancel = $("#permanent-cancel");
+  $("#memory-window").addEventListener("change", (event) => {
+    state.memoryWindowId = event.target.value;
+    void refreshPermanentMemory();
+    void refreshNonPermanentMemories();
+  });
   edit.addEventListener("click", () => {
     box.dataset.editing = "1";
     box.readOnly = false;
@@ -766,7 +798,7 @@ function bindPermanentMemory() {
     openDialog("保存永久记忆", "这块记忆会在新对话开始时带给 AI。确认保存？", async () => {
       save.disabled = true;
       try {
-        await api("/api/memory/permanent", { method: "POST", body: { text: box.value } });
+        await api("/api/memory/permanent", { method: "POST", body: { text: box.value, conversationId: state.memoryWindowId } });
         box._saved = box.value;
         showToast("永久记忆已保存");
         exitEdit();
@@ -778,7 +810,7 @@ function bindPermanentMemory() {
 
 async function prepareForget(entry) {
   try {
-    await api("/api/memory/forget", { method: "POST", body: { index: entry.index } });
+    await api("/api/memory/forget", { method: "POST", body: { index: entry.index, conversationId: state.memoryWindowId } });
     openDialog("确认遗忘", `类别：${categoryLabel(entry.category)}\n标题：${entry.title}\n\n删除后会同步到私有记忆库。`, async () => {
       try {
         const result = await api("/api/memory/forget/confirm", { method: "POST", body: {} });

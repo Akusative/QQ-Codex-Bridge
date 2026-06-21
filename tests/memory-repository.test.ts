@@ -124,7 +124,8 @@ describe("MemoryRepository", () => {
       summary: "用户确认的长期偏好是：回复简洁。",
       forgetCondition: "用户提出修改时。",
     });
-    expect(added).toEqual({ synced: true });
+    expect(added).toMatchObject({ synced: true });
+    expect(added.relativePath).toMatch(/\.memory\.md$/);
     const entries = await repository.list();
     expect(entries).toHaveLength(1);
     expect(entries[0]).toMatchObject({ title: "简洁回复", category: "preference" });
@@ -173,7 +174,7 @@ describe("MemoryRepository", () => {
       title: "本地记忆",
       summary: "这条合成测试记忆只保存在本地。",
       forgetCondition: "用户提出删除时。",
-    })).toEqual({ synced: true });
+    })).toMatchObject({ synced: true });
     const entries = await repository.list();
     expect(entries).toHaveLength(1);
     expect(await repository.remove(entries[0])).toEqual({ synced: true });

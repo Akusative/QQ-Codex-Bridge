@@ -11,6 +11,10 @@ interface AutomaticMemoryStore {
   add(candidate: MemoryCandidate): Promise<MemoryMutationResult>;
 }
 
+interface MemoryScopeAssigner {
+  assign(relativePath: string, conversationId: string): Promise<void>;
+}
+
 export class AutoMemoryCoordinator {
   private readonly running = new Set<string>();
   private timer: NodeJS.Timeout | undefined;
@@ -22,6 +26,7 @@ export class AutoMemoryCoordinator {
     private readonly logger: Logger,
     private readonly workdir: string,
     private readonly timeoutMs: number,
+    private readonly scope?: MemoryScopeAssigner,
   ) {}
 
   start(): void {
@@ -97,7 +102,9 @@ export class AutoMemoryCoordinator {
           `${candidate.title}\n${candidate.summary}\n${candidate.forgetCondition}`,
         );
         if (safety.blocked) continue;
-        await this.memory.add(candidate);
+        const result = await this.memory.add(candidate);
+        // 给自动生成的记忆打上它来自的窗口归属。
+        if (result.relativePath) await this.scope?.assign(result.relativePath, conversationId);
       }
       await this.workspace.markMemorySummarized(conversationId, pending.messageCount);
       this.logger.info(

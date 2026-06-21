@@ -46,6 +46,7 @@ export interface ConversationRecord {
   messageCount: number;
   createdAt: string;
   updatedAt: string;
+  permanentMemory: string;
 }
 
 export interface ConversationMessage {
@@ -115,6 +116,7 @@ export class BridgeWorkspaceStore {
       this.ensureJson(this.conversationIndexPath(), { conversations: [] }),
       this.writeJson(this.accountPath(), this.identity),
     ]);
+    await this.migrateAccountPermanentMemory();
   }
 
   async snapshot(): Promise<Record<string, unknown>> {
@@ -336,6 +338,7 @@ export class BridgeWorkspaceStore {
       messageCount: 0,
       createdAt: now,
       updatedAt: now,
+      permanentMemory: "",
     };
     index.conversations.unshift(record);
     settings.activeConversationId = record.id;
@@ -543,14 +546,33 @@ export class BridgeWorkspaceStore {
     await this.writeJson(this.settingsPath(), settings);
   }
 
-  async permanentMemory(): Promise<string> {
-    const settings = await this.settings();
-    return settings.permanentMemory ?? "";
+  async conversationPermanentMemory(conversationId: string): Promise<string> {
+    const index = await this.conversationIndex();
+    return index.conversations.find((item) => item.id === conversationId)?.permanentMemory ?? "";
   }
 
-  async updatePermanentMemory(text: string): Promise<void> {
+  async updateConversationPermanentMemory(conversationId: string, text: string): Promise<void> {
+    const index = await this.conversationIndex();
+    const conversation = index.conversations.find((item) => item.id === conversationId);
+    if (!conversation) throw new Error("对话不存在。");
+    conversation.permanentMemory = text;
+    conversation.updatedAt = new Date().toISOString();
+    await this.writeJson(this.conversationIndexPath(), index);
+  }
+
+  /** 一次性迁移：把旧的账号级永久记忆搬进当前 active 窗口，然后清空账号字段。 */
+  private async migrateAccountPermanentMemory(): Promise<void> {
     const settings = await this.settings();
-    settings.permanentMemory = text;
+    if (!settings.permanentMemory) return;
+    const index = await this.conversationIndex();
+    const target = settings.activeConversationId
+      ? index.conversations.find((item) => item.id === settings.activeConversationId)
+      : index.conversations[0];
+    if (target && !target.permanentMemory) {
+      target.permanentMemory = settings.permanentMemory;
+      await this.writeJson(this.conversationIndexPath(), index);
+    }
+    settings.permanentMemory = "";
     await this.writeJson(this.settingsPath(), settings);
   }
 
@@ -687,6 +709,7 @@ export class BridgeWorkspaceStore {
         contextStartMessageIndex: conversation.contextStartMessageIndex ?? 0,
         memorySummaryMessageIndex: conversation.memorySummaryMessageIndex ?? 0,
         lastMemorySummaryAt: conversation.lastMemorySummaryAt ?? null,
+        permanentMemory: conversation.permanentMemory ?? "",
       })),
     };
   }

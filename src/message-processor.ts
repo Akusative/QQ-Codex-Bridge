@@ -432,11 +432,18 @@ export class MessageProcessor {
         const decaySnapshot = this.options.decayStore
           ? await this.options.decayStore.snapshot()
           : undefined;
-        const selectedMemories = selectRelevantMemories(command, approvedMemories, {
+        // 按窗口隔离：只用本窗口名下的记忆（无归属的遗留记忆作全局兜底）。
+        const scopedMemories = decaySnapshot
+          ? approvedMemories.filter((memory) => {
+              const owner = decaySnapshot(memory.relativePath)?.conversationId;
+              return !owner || owner === conversationId;
+            })
+          : approvedMemories;
+        const selectedMemories = selectRelevantMemories(command, scopedMemories, {
           decay: decaySnapshot,
         });
-        // 永久记忆：新对话首条带一次；其余轮次仅在与本轮相关时带上。
-        const permanentText = await workspaceStore.permanentMemory();
+        // 永久记忆：本窗口的；新对话首条带一次，其余轮次仅在与本轮相关时带上。
+        const permanentText = await workspaceStore.conversationPermanentMemory(conversationId);
         let permanentForPrompt: string | undefined;
         if (permanentText.trim()) {
           const activeConversation = await workspaceStore.activeConversation();

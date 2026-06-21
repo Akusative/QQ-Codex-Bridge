@@ -84,10 +84,18 @@ export interface WebUiServerOptions {
   getPlugins?: () => PluginInfo[];
   setPluginEnabled?: (id: string, enabled: boolean) => Promise<void>;
   workspaceStore?: BridgeWorkspaceStore;
+  decayStore?: MemoryScopeStore;
   personaDocumentExtractorScriptPath?: string;
   softwareUpdate?: SoftwareUpdateController;
   systemControl?: BridgeSystemController;
   autoTrustLoopback?: boolean;
+}
+
+/** 记忆侧车里 webui 需要的窗口归属能力（由 MemoryDecayStore 实现）。 */
+export interface MemoryScopeStore {
+  snapshot(): Promise<(id: string) => { conversationId?: string } | undefined>;
+  pathsForConversation(conversationId: string): Promise<string[]>;
+  removeMany(ids: ReadonlyArray<string>): Promise<void>;
 }
 
 export interface WebUiMemoryStore {
@@ -527,6 +535,7 @@ export class WebUiServer {
         this.sendJson(response, 400, { error: "对话编号无效。" });
         return;
       }
+      await this.deleteConversationMemories(body.id);
       await this.requireWorkspaceStore().deleteConversation(body.id);
       this.sendJson(response, 200, { deleted: true });
       return;
@@ -697,28 +706,36 @@ export class WebUiServer {
       return;
     }
     if (request.method === "GET" && url.pathname === "/api/memories") {
-      // readApprovedMemories 与 list() 同序，故 index 仍可用于 forget/update；多带 summary 供就地编辑。
-      const entries = await this.options.memoryRepository.readApprovedMemories();
-      const mapped = entries
-        .map(({ title, category, summary, updatedAt }, index) => ({
-          index: index + 1,
-          title,
-          category,
-          summary,
-          updatedAt,
-          fuzzyDate: fuzzyMemoryDate(updatedAt),
-        }))
-        .sort((left, right) => left.updatedAt.localeCompare(right.updatedAt) || left.index - right.index);
-      this.sendJson(response, 200, { entries: mapped });
+      const conversationId = await this.resolveConversationId(url.searchParams.get("conversationId"));
+      const entries = await this.scopedMemories(conversationId);
+      const mapped = entries.map((entry, index) => ({
+        index: index + 1,
+        title: entry.title,
+        category: entry.category,
+        summary: entry.summary,
+        updatedAt: entry.updatedAt,
+        fuzzyDate: fuzzyMemoryDate(entry.updatedAt),
+      }));
+      this.sendJson(response, 200, { entries: mapped, conversationId });
       return;
     }
     if (request.method === "GET" && url.pathname === "/api/memory/permanent") {
-      const text = await this.requireWorkspaceStore().permanentMemory();
-      this.sendJson(response, 200, { text });
+      const conversationId = await this.resolveConversationId(url.searchParams.get("conversationId"));
+      const text = conversationId
+        ? await this.requireWorkspaceStore().conversationPermanentMemory(conversationId)
+        : "";
+      this.sendJson(response, 200, { text, conversationId });
       return;
     }
     if (request.method === "POST" && url.pathname === "/api/memory/permanent") {
       const body = await readJson(request);
+      const conversationId = await this.resolveConversationId(
+        typeof body.conversationId === "string" ? body.conversationId : null,
+      );
+      if (!conversationId) {
+        this.sendJson(response, 400, { error: "请先选择一个对话窗口。" });
+        return;
+      }
       const text = typeof body.text === "string" ? body.text : "";
       if (text.length > 8_000) {
         this.sendJson(response, 400, { error: "永久记忆过长（上限 8000 字）。" });
@@ -728,7 +745,7 @@ export class WebUiServer {
         this.sendJson(response, 400, { error: "内容包含敏感信息，未保存。" });
         return;
       }
-      await this.requireWorkspaceStore().updatePermanentMemory(text);
+      await this.requireWorkspaceStore().updateConversationPermanentMemory(conversationId, text);
       this.sendJson(response, 200, { updated: true });
       return;
     }
@@ -738,9 +755,12 @@ export class WebUiServer {
         return;
       }
       const body = await readJson(request);
+      const conversationId = await this.resolveConversationId(
+        typeof body.conversationId === "string" ? body.conversationId : null,
+      );
       const index = Number(body.index);
       const text = typeof body.text === "string" ? body.text.trim() : "";
-      const entries = await this.options.memoryRepository.list();
+      const entries = await this.scopedMemories(conversationId);
       const entry = Number.isInteger(index) ? entries[index - 1] : undefined;
       if (!entry) {
         this.sendJson(response, 400, { error: "记忆编号无效。" });
@@ -808,8 +828,11 @@ export class WebUiServer {
     }
     if (request.method === "POST" && url.pathname === "/api/memory/forget") {
       const body = await readJson(request);
+      const conversationId = await this.resolveConversationId(
+        typeof body.conversationId === "string" ? body.conversationId : null,
+      );
       const index = Number(body.index);
-      const entries = await this.options.memoryRepository.list();
+      const entries = await this.scopedMemories(conversationId);
       const entry = Number.isInteger(index) ? entries[index - 1] : undefined;
       if (!entry) {
         this.sendJson(response, 400, { error: "记忆编号无效。" });
@@ -828,6 +851,7 @@ export class WebUiServer {
         return;
       }
       const result = await this.options.memoryRepository.remove(entry);
+      await this.options.decayStore?.removeMany([entry.relativePath]);
       session.memoryDrafts.clear();
       this.sendJson(response, 200, { synced: result.synced });
       return;
@@ -1002,6 +1026,46 @@ export class WebUiServer {
       throw new WebUiRequestError(503, "本地对话工作区尚未启用。");
     }
     return this.options.workspaceStore;
+  }
+
+  private async resolveConversationId(explicit?: string | null): Promise<string | undefined> {
+    if (explicit) return explicit;
+    const active = await this.options.workspaceStore?.activeConversation();
+    return active?.id ?? undefined;
+  }
+
+  /** 本窗口名下的非永久记忆（含无归属遗留），按最老在前排序；index = 位置+1。 */
+  private async scopedMemories(conversationId: string | undefined): Promise<ApprovedMemoryEntry[]> {
+    const all = await this.options.memoryRepository.readApprovedMemories();
+    const snapshot = this.options.decayStore ? await this.options.decayStore.snapshot() : undefined;
+    return all
+      .filter((memory) => {
+        const owner = snapshot?.(memory.relativePath)?.conversationId;
+        return !owner || owner === conversationId;
+      })
+      .slice()
+      .sort(
+        (left, right) =>
+          left.updatedAt.localeCompare(right.updatedAt) ||
+          left.relativePath.localeCompare(right.relativePath),
+      );
+  }
+
+  /** 删窗口前清掉它名下的非永久记忆 + 侧车项。 */
+  private async deleteConversationMemories(conversationId: string): Promise<void> {
+    if (!this.options.decayStore) return;
+    const paths = new Set(await this.options.decayStore.pathsForConversation(conversationId));
+    if (paths.size === 0) return;
+    const all = await this.options.memoryRepository.list();
+    for (const entry of all) {
+      if (!paths.has(entry.relativePath)) continue;
+      try {
+        await this.options.memoryRepository.remove(entry);
+      } catch {
+        /* 单条删除失败不阻断整窗口删除 */
+      }
+    }
+    await this.options.decayStore.removeMany([...paths]);
   }
 
   private rejectSensitiveText(response: ServerResponse, text: string): boolean {

@@ -186,20 +186,41 @@ describe("WebUiServer", () => {
     expect(response.headers.get("cache-control")).toBe("no-store");
   });
 
-  it("stores and returns permanent memory", async () => {
-    const { baseUrl } = await createFixture();
+  it("stores and returns per-window permanent memory", async () => {
+    const { baseUrl, workspaceStore } = await createFixture();
     const { cookie } = await bootstrap(baseUrl);
-    const save = await post(baseUrl, "/api/memory/permanent", cookie, { text: "我叫张三，偏好简洁回复。" });
+    const conv = await workspaceStore.createConversation("窗口A");
+    const save = await post(baseUrl, "/api/memory/permanent", cookie, {
+      text: "我叫张三，偏好简洁回复。",
+      conversationId: conv.id,
+    });
     expect(save.status).toBe(200);
-    const get = await fetch(`${baseUrl}/api/memory/permanent`, { headers: { Cookie: cookie } });
-    expect(await get.json()).toEqual({ text: "我叫张三，偏好简洁回复。" });
+    const get = await fetch(
+      `${baseUrl}/api/memory/permanent?conversationId=${conv.id}`,
+      { headers: { Cookie: cookie } },
+    );
+    expect(await get.json()).toMatchObject({ text: "我叫张三，偏好简洁回复。" });
   });
 
   it("rejects oversized permanent memory", async () => {
-    const { baseUrl } = await createFixture();
+    const { baseUrl, workspaceStore } = await createFixture();
     const { cookie } = await bootstrap(baseUrl);
-    const response = await post(baseUrl, "/api/memory/permanent", cookie, { text: "x".repeat(8_001) });
+    const conv = await workspaceStore.createConversation();
+    const response = await post(baseUrl, "/api/memory/permanent", cookie, {
+      text: "x".repeat(8_001),
+      conversationId: conv.id,
+    });
     expect(response.status).toBe(400);
+  });
+
+  it("isolates permanent memory between windows", async () => {
+    const { baseUrl, workspaceStore } = await createFixture();
+    const { cookie } = await bootstrap(baseUrl);
+    const a = await workspaceStore.createConversation("A");
+    const b = await workspaceStore.createConversation("B");
+    await post(baseUrl, "/api/memory/permanent", cookie, { text: "窗口A的记忆", conversationId: a.id });
+    const getB = await fetch(`${baseUrl}/api/memory/permanent?conversationId=${b.id}`, { headers: { Cookie: cookie } });
+    expect(await getB.json()).toMatchObject({ text: "" });
   });
 
   it("updates a non-permanent memory in place via the WebUI", async () => {

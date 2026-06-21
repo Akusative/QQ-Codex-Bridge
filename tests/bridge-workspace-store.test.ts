@@ -36,6 +36,22 @@ describe("BridgeWorkspaceStore", () => {
     expect(firstSnapshot.activeConversation.name).toMatch(/^\d{4}\/\d{2}\/\d{2}\/\d{2}\/\d{2}\/\d{2}$/u);
   });
 
+  it("keeps permanent memory isolated per conversation window", async () => {
+    const root = await mkdtemp(join(tmpdir(), "bridge-workspace-"));
+    const store = new BridgeWorkspaceStore(root, { qq: "10001", nickname: "一号" });
+    await store.initialize();
+    const a = await store.createConversation("A");
+    const b = await store.createConversation("B");
+
+    expect(await store.conversationPermanentMemory(a.id)).toBe("");
+    await store.updateConversationPermanentMemory(a.id, "窗口A的核心记忆");
+    expect(await store.conversationPermanentMemory(a.id)).toBe("窗口A的核心记忆");
+    expect(await store.conversationPermanentMemory(b.id)).toBe("");
+
+    await store.deleteConversation(a.id);
+    expect(await store.conversationPermanentMemory(a.id)).toBe("");
+  });
+
   it("retrieves relevant excerpts from multiple persona documents", async () => {
     const root = await mkdtemp(join(tmpdir(), "bridge-workspace-"));
     const store = new BridgeWorkspaceStore(root, { qq: "10001", nickname: "一号" });
