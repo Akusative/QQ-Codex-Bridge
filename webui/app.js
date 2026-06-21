@@ -58,6 +58,7 @@ function bindEvents() {
   $("#memory-form").addEventListener("submit", createMemoryDraft);
   $("#memory-path-form").addEventListener("submit", updateMemoryPath);
   $("#sync-memory").addEventListener("click", syncMemory);
+  bindPermanentMemory();
   $("#refresh-status").addEventListener("click", refreshStatus);
   $("#model-form").addEventListener("submit", updateModelSetting);
   $("#storage-form").addEventListener("submit", updateStorageLimit);
@@ -655,6 +656,19 @@ async function createMemoryDraft(event) {
 }
 
 async function refreshMemories() {
+  await Promise.all([refreshPermanentMemory(), refreshNonPermanentMemories()]);
+}
+
+async function refreshPermanentMemory() {
+  try {
+    const { text } = await api("/api/memory/permanent");
+    const box = $("#permanent-memory");
+    box._saved = text || "";
+    if (!box.dataset.editing) box.value = text || "";
+  } catch { /* 永久记忆不可用时保留空框 */ }
+}
+
+async function refreshNonPermanentMemories() {
   try {
     const result = await api("/api/memories");
     const list = $("#memory-list");
@@ -663,25 +677,103 @@ async function refreshMemories() {
     if (!result.entries.length) {
       const empty = document.createElement("div");
       empty.className = "empty-state";
-      empty.textContent = "还没有已确认记忆";
+      empty.textContent = "还没有非永久记忆";
       list.append(empty);
       return;
     }
     for (const entry of result.entries) {
-      const article = document.createElement("article");
-      article.className = "memory-item";
-      const main = document.createElement("div");
-      main.className = "memory-main";
-      const title = document.createElement("h4");
-      title.textContent = entry.title;
-      const category = document.createElement("span");
-      category.className = "category";
-      category.textContent = categoryLabel(entry.category);
-      main.append(title, category);
-      article.append(main, button("遗忘", "ghost danger", () => prepareForget(entry)));
-      list.append(article);
+      list.append(renderMemoryRow(entry));
     }
   } catch (error) { showToast(error.message); }
+}
+
+function renderMemoryRow(entry) {
+  const article = document.createElement("article");
+  article.className = "memory-item compact";
+  const main = document.createElement("div");
+  main.className = "memory-main";
+  const meta = document.createElement("div");
+  meta.className = "memory-meta";
+  const date = document.createElement("span");
+  date.className = "memory-date";
+  date.textContent = entry.fuzzyDate || "";
+  const category = document.createElement("span");
+  category.className = "category";
+  category.textContent = categoryLabel(entry.category);
+  meta.append(date, category);
+  const text = document.createElement("p");
+  text.className = "memory-summary";
+  text.textContent = entry.summary || entry.title;
+  main.append(meta, text);
+  const actions = document.createElement("div");
+  actions.className = "memory-actions";
+  actions.append(
+    button("编辑", "ghost", () => startMemoryEdit(article, entry, text)),
+    button("遗忘", "ghost danger", () => prepareForget(entry)),
+  );
+  article.append(main, actions);
+  return article;
+}
+
+function startMemoryEdit(article, entry, textElement) {
+  if (article.querySelector(".memory-edit")) return;
+  const editor = document.createElement("textarea");
+  editor.className = "memory-edit";
+  editor.rows = 3;
+  editor.value = entry.summary || entry.title;
+  const bar = document.createElement("div");
+  bar.className = "memory-actions";
+  const save = button("保存", "primary", async () => {
+    const value = editor.value.trim();
+    if (value.length < 2) { showToast("记忆内容太短"); return; }
+    save.disabled = true;
+    try {
+      const result = await api("/api/memory/update", { method: "POST", body: { index: entry.index, text: value } });
+      showToast(result.synced ? "记忆已更新并同步" : "记忆已更新，远端同步待处理");
+      await refreshNonPermanentMemories();
+    } catch (error) { save.disabled = false; showToast(error.message); }
+  });
+  const cancel = button("取消", "ghost", () => refreshNonPermanentMemories());
+  bar.append(save, cancel);
+  textElement.replaceWith(editor);
+  const oldActions = article.querySelector(".memory-actions");
+  if (oldActions) oldActions.replaceWith(bar);
+  editor.focus();
+}
+
+function bindPermanentMemory() {
+  const box = $("#permanent-memory");
+  const edit = $("#permanent-edit");
+  const save = $("#permanent-save");
+  const cancel = $("#permanent-cancel");
+  edit.addEventListener("click", () => {
+    box.dataset.editing = "1";
+    box.readOnly = false;
+    edit.hidden = true;
+    save.hidden = false;
+    cancel.hidden = false;
+    box.focus();
+  });
+  const exitEdit = () => {
+    delete box.dataset.editing;
+    box.readOnly = true;
+    edit.hidden = false;
+    save.hidden = true;
+    cancel.hidden = true;
+  };
+  cancel.addEventListener("click", () => { box.value = box._saved || ""; exitEdit(); });
+  save.addEventListener("click", () => {
+    openDialog("保存永久记忆", "这块记忆会在新对话开始时带给 AI。确认保存？", async () => {
+      save.disabled = true;
+      try {
+        await api("/api/memory/permanent", { method: "POST", body: { text: box.value } });
+        box._saved = box.value;
+        showToast("永久记忆已保存");
+        exitEdit();
+      } catch (error) { showToast(error.message); }
+      finally { save.disabled = false; }
+    });
+  });
 }
 
 async function prepareForget(entry) {

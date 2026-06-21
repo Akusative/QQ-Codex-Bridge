@@ -67,6 +67,12 @@ class FakeMemoryStore implements WebUiMemoryStore {
     return { synced: true };
   }
 
+  updated: { relativePath: string; summary: string }[] = [];
+  async update(entry: MemoryListEntry, newSummary: string) {
+    this.updated.push({ relativePath: entry.relativePath, summary: newSummary });
+    return { synced: true };
+  }
+
   async sync() {
     return { state: "up-to-date" as const };
   }
@@ -178,6 +184,45 @@ describe("WebUiServer", () => {
     expect(response.headers.get("content-security-policy")).toContain("default-src 'self'");
     expect(response.headers.get("x-frame-options")).toBe("DENY");
     expect(response.headers.get("cache-control")).toBe("no-store");
+  });
+
+  it("stores and returns permanent memory", async () => {
+    const { baseUrl } = await createFixture();
+    const { cookie } = await bootstrap(baseUrl);
+    const save = await post(baseUrl, "/api/memory/permanent", cookie, { text: "我叫张三，偏好简洁回复。" });
+    expect(save.status).toBe(200);
+    const get = await fetch(`${baseUrl}/api/memory/permanent`, { headers: { Cookie: cookie } });
+    expect(await get.json()).toEqual({ text: "我叫张三，偏好简洁回复。" });
+  });
+
+  it("rejects oversized permanent memory", async () => {
+    const { baseUrl } = await createFixture();
+    const { cookie } = await bootstrap(baseUrl);
+    const response = await post(baseUrl, "/api/memory/permanent", cookie, { text: "x".repeat(8_001) });
+    expect(response.status).toBe(400);
+  });
+
+  it("updates a non-permanent memory in place via the WebUI", async () => {
+    const { baseUrl, memoryRepository } = await createFixture();
+    const { cookie } = await bootstrap(baseUrl);
+    const response = await post(baseUrl, "/api/memory/update", cookie, {
+      index: 1,
+      text: "回复时优先使用更详细的简体中文。",
+    });
+    expect(response.status).toBe(200);
+    expect(memoryRepository.updated).toEqual([
+      { relativePath: "approved/preference.memory.md", summary: "回复时优先使用更详细的简体中文。" },
+    ]);
+  });
+
+  it("returns fuzzy dates with /api/memories entries", async () => {
+    const { baseUrl } = await createFixture();
+    const { cookie } = await bootstrap(baseUrl);
+    const response = await fetch(`${baseUrl}/api/memories`, { headers: { Cookie: cookie } });
+    const body = await response.json() as { entries: Array<{ index: number; fuzzyDate: string; summary: string }> };
+    expect(body.entries).toHaveLength(1);
+    expect(body.entries[0]).toMatchObject({ index: 1, summary: "回复时优先使用简体中文。" });
+    expect(typeof body.entries[0].fuzzyDate).toBe("string");
   });
 
   it("auto-authenticates loopback with an HttpOnly strict cookie", async () => {

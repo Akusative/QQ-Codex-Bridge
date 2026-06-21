@@ -138,6 +138,30 @@ describe("MemoryRepository", () => {
     expect(status.trim()).toBe("");
   });
 
+  it("updates an approved memory's summary in place", async () => {
+    const { root, repository } = await fixture();
+    await repository.add({
+      category: "preference",
+      title: "简洁回复",
+      summary: "用户确认的长期偏好是：回复简洁。",
+      forgetCondition: "用户提出修改时。",
+    });
+    const before = await repository.list();
+    expect(before).toHaveLength(1);
+
+    const result = await repository.update(before[0], "用户确认的长期偏好是：回复要更详细一些。");
+    expect(result).toEqual({ synced: true });
+
+    const approved = await repository.readApprovedMemories();
+    expect(approved).toHaveLength(1);
+    expect(approved[0].summary).toBe("用户确认的长期偏好是：回复要更详细一些。");
+
+    const { stdout: status } = await execFileAsync("git", ["status", "--porcelain"], {
+      cwd: root,
+    });
+    expect(status.trim()).toBe("");
+  });
+
   it("writes and removes memories without contacting a remote in local-only mode", async () => {
     const { root } = await fixture();
     await execFileAsync("git", ["remote", "remove", "origin"], { cwd: root });

@@ -11,6 +11,7 @@ import { OneBotEventServer } from "./onebot/event-server.js";
 import { HighRiskConfirmation } from "./security/high-risk-confirmation.js";
 import { MemoryDraftManager } from "./memory/memory-draft-manager.js";
 import { MemoryRepository } from "./memory/memory-repository.js";
+import { MemoryDecayStore } from "./memory/memory-decay-store.js";
 import { AutoMemoryCoordinator } from "./memory/auto-memory-coordinator.js";
 import { MessageProcessor } from "./message-processor.js";
 import { MessagePipeline } from "./pipeline/message-pipeline.js";
@@ -70,6 +71,9 @@ try {
     savedMemorySettings.memoryDirectory,
     config.MEMORY_REMOTE_URL || undefined,
   );
+  const decayStore = new MemoryDecayStore(
+    join(config.ALLOWED_WORKSPACE_ROOT, "bridge-data", "memory-decay.json"),
+  );
   const autoMemory = new AutoMemoryCoordinator(
     workspaceStore,
     memoryRepository,
@@ -86,6 +90,7 @@ try {
     agent,
     workspaceStore,
     memoryRepository,
+    decayStore,
     autoMemory,
     highRiskConfirmation,
     memoryDrafts,

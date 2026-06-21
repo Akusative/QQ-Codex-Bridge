@@ -147,7 +147,18 @@
             </div>
             <p class="muted small">手动记忆仍需确认；自动记忆按设置条件运行，并在入库前再次过滤敏感信息。</p>
           </form>
-          <div class="section-title"><h3>已确认记忆</h3><span id="memory-count" class="count-badge">0</span></div>
+          <div class="section-title"><h3>永久记忆</h3></div>
+          <div class="permanent-memory-card">
+            <p class="muted small">长期稳定、你完全掌控的核心记忆。新对话开始会带上一次，相关时也会带上。修改需点保存确认。</p>
+            <textarea id="permanent-memory" class="permanent-memory-box" rows="6" readonly placeholder="还没有永久记忆，点「编辑」添加"></textarea>
+            <div class="permanent-memory-actions">
+              <button id="permanent-edit" class="ghost" type="button">编辑</button>
+              <button id="permanent-save" class="primary" type="button" hidden>保存</button>
+              <button id="permanent-cancel" class="ghost" type="button" hidden>取消</button>
+            </div>
+          </div>
+          <div class="section-title"><h3>非永久记忆</h3><span id="memory-count" class="count-badge">0</span></div>
+          <p class="muted small">按时间排列（最早在上、越久越少被调用）。可就地编辑或遗忘。</p>
           <div id="memory-list" class="memory-list"></div>
           <small class="panel-signature">© 2026 沈菀 (Akusative) | AGPL-3.0</small>
         </section>

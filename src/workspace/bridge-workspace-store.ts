@@ -70,6 +70,7 @@ interface AccountSettings {
   memoryDirectory: string;
   lastMemorySummaryAt: string | null;
   pluginStates: Record<string, boolean>;
+  permanentMemory: string;
 }
 
 interface ConversationIndex {
@@ -542,6 +543,17 @@ export class BridgeWorkspaceStore {
     await this.writeJson(this.settingsPath(), settings);
   }
 
+  async permanentMemory(): Promise<string> {
+    const settings = await this.settings();
+    return settings.permanentMemory ?? "";
+  }
+
+  async updatePermanentMemory(text: string): Promise<void> {
+    const settings = await this.settings();
+    settings.permanentMemory = text;
+    await this.writeJson(this.settingsPath(), settings);
+  }
+
   async memorySettings(): Promise<MemoryAutomationSettings & { memoryDirectory: string }> {
     const settings = await this.settings();
     return {
@@ -661,6 +673,7 @@ export class BridgeWorkspaceStore {
       memoryDirectory: resolve(this.defaultMemoryDirectory),
       lastMemorySummaryAt: null,
       pluginStates: {},
+      permanentMemory: "",
     };
   }
 

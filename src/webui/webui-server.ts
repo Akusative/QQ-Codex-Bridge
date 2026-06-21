@@ -20,6 +20,7 @@ import {
 } from "../memory/memory-commands.js";
 import {
   buildMemoryAugmentedPrompt,
+  fuzzyMemoryDate,
   selectRelevantMemories,
 } from "../memory/memory-context.js";
 import { MemoryDraftManager } from "../memory/memory-draft-manager.js";
@@ -93,6 +94,7 @@ export interface WebUiMemoryStore {
   list(): Promise<MemoryListEntry[]>;
   add(candidate: MemoryCandidate): Promise<MemoryMutationResult>;
   remove(entry: MemoryListEntry): Promise<MemoryMutationResult>;
+  update?(entry: MemoryListEntry, newSummary: string, newForgetCondition?: string): Promise<MemoryMutationResult>;
   sync(): Promise<MemorySyncResult>;
   readApprovedMemories(): Promise<ReadonlyArray<ApprovedMemoryEntry>>;
   getRoot?(): string;
@@ -695,14 +697,71 @@ export class WebUiServer {
       return;
     }
     if (request.method === "GET" && url.pathname === "/api/memories") {
-      const entries = await this.options.memoryRepository.list();
-      this.sendJson(response, 200, {
-        entries: entries.map(({ title, category }, index) => ({
+      // readApprovedMemories 与 list() 同序，故 index 仍可用于 forget/update；多带 summary 供就地编辑。
+      const entries = await this.options.memoryRepository.readApprovedMemories();
+      const mapped = entries
+        .map(({ title, category, summary, updatedAt }, index) => ({
           index: index + 1,
           title,
           category,
-        })),
-      });
+          summary,
+          updatedAt,
+          fuzzyDate: fuzzyMemoryDate(updatedAt),
+        }))
+        .sort((left, right) => left.updatedAt.localeCompare(right.updatedAt) || left.index - right.index);
+      this.sendJson(response, 200, { entries: mapped });
+      return;
+    }
+    if (request.method === "GET" && url.pathname === "/api/memory/permanent") {
+      const text = await this.requireWorkspaceStore().permanentMemory();
+      this.sendJson(response, 200, { text });
+      return;
+    }
+    if (request.method === "POST" && url.pathname === "/api/memory/permanent") {
+      const body = await readJson(request);
+      const text = typeof body.text === "string" ? body.text : "";
+      if (text.length > 8_000) {
+        this.sendJson(response, 400, { error: "永久记忆过长（上限 8000 字）。" });
+        return;
+      }
+      if (text.trim() && classifySensitiveContent(text).blocked) {
+        this.sendJson(response, 400, { error: "内容包含敏感信息，未保存。" });
+        return;
+      }
+      await this.requireWorkspaceStore().updatePermanentMemory(text);
+      this.sendJson(response, 200, { updated: true });
+      return;
+    }
+    if (request.method === "POST" && url.pathname === "/api/memory/update") {
+      if (!this.options.memoryRepository.update) {
+        this.sendJson(response, 503, { error: "当前运行模式不支持编辑记忆。" });
+        return;
+      }
+      const body = await readJson(request);
+      const index = Number(body.index);
+      const text = typeof body.text === "string" ? body.text.trim() : "";
+      const entries = await this.options.memoryRepository.list();
+      const entry = Number.isInteger(index) ? entries[index - 1] : undefined;
+      if (!entry) {
+        this.sendJson(response, 400, { error: "记忆编号无效。" });
+        return;
+      }
+      if (text.length < 2 || text.length > 1_000) {
+        this.sendJson(response, 400, { error: "记忆内容长度需在 2 至 1000 字之间。" });
+        return;
+      }
+      try {
+        const result = await this.options.memoryRepository.update(entry, text);
+        this.sendJson(response, 200, { synced: result.synced });
+      } catch (error) {
+        const message =
+          error instanceof MemoryRepositoryError && error.code === "unsafe"
+            ? "内容包含敏感信息，未保存。"
+            : error instanceof MemoryRepositoryError && error.code === "dirty"
+              ? "记忆库有未提交改动，请稍后再试。"
+              : "记忆更新失败。";
+        this.sendJson(response, 400, { error: message });
+      }
       return;
     }
     if (request.method === "POST" && url.pathname === "/api/chat") {

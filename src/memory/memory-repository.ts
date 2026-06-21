@@ -225,6 +225,69 @@ export class MemoryRepository {
     }
   }
 
+  async update(
+    entry: MemoryListEntry,
+    newSummary: string,
+    newForgetCondition?: string,
+  ): Promise<MemoryMutationResult> {
+    await this.sync();
+    const ready = await this.ensureReady();
+    await this.ensureClean();
+    const absolutePath = resolve(this.root, entry.relativePath);
+    await assertInside(ready.approvedRoot, absolutePath);
+    const stat = await lstat(absolutePath).catch(() => undefined);
+    if (!stat?.isFile() || stat.isSymbolicLink()) throw new MemoryRepositoryError("invalid");
+
+    const original = await readFile(absolutePath, "utf8");
+    const fields = parseFrontmatter(original);
+    if (!fields || !isMemoryCategory(fields.category)) throw new MemoryRepositoryError("invalid");
+    const summary = newSummary.trim();
+    if (summary.length < 2 || summary.length > 1_000) throw new MemoryRepositoryError("invalid");
+    const forgetCondition = (
+      newForgetCondition ??
+      extractSection(original, "更新或遗忘条件") ??
+      "用户提出更新、纠正或删除时。"
+    ).trim();
+    const title = fields.title || basename(absolutePath, ".memory.md");
+    assertMemoryTextSafe(`${title}\n${summary}\n${forgetCondition}`);
+
+    const body = renderExistingMemory({
+      id: fields.id || "",
+      title,
+      category: fields.category,
+      createdAt: fields.created_at || chinaDate(),
+      updatedAt: chinaDate(),
+      summary,
+      forgetCondition,
+    });
+
+    let committed = false;
+    try {
+      await writeFile(absolutePath, body, "utf8");
+      await this.validate();
+      await this.runGit(["add", "--", entry.relativePath]);
+      await this.assertOnlyStaged(entry.relativePath);
+      await this.runGit(["commit", "-m", `Update approved memory ${fields.id || ""}`.trim()]);
+      committed = true;
+      this.contextCache = undefined;
+    } catch (error) {
+      if (!committed) {
+        await this.runGit(["reset", "--", entry.relativePath], true);
+        await writeFile(absolutePath, original, "utf8");
+      }
+      if (error instanceof MemoryRepositoryError) throw error;
+      throw new MemoryRepositoryError("invalid");
+    }
+
+    if (!this.expectedRemote) return { synced: true };
+    try {
+      await this.runGit(["push", "origin", "main"]);
+      return { synced: true };
+    } catch {
+      return { synced: false };
+    }
+  }
+
   async sync(): Promise<MemorySyncResult> {
     await this.ensureReady();
     await this.ensureClean();
@@ -371,6 +434,39 @@ function renderMemory(candidate: MemoryCandidate & { id: string; date: string })
     "## 更新或遗忘条件",
     "",
     candidate.forgetCondition,
+    "",
+  ].join("\n");
+}
+
+function renderExistingMemory(fields: {
+  id: string;
+  title: string;
+  category: MemoryCategory;
+  createdAt: string;
+  updatedAt: string;
+  summary: string;
+  forgetCondition: string;
+}): string {
+  return [
+    "---",
+    `id: ${fields.id}`,
+    `title: ${fields.title}`,
+    `category: ${fields.category}`,
+    "status: approved",
+    `created_at: ${fields.createdAt}`,
+    `updated_at: ${fields.updatedAt}`,
+    "sensitivity: low",
+    "source: user-confirmed",
+    `tags: ${fields.category}`,
+    "---",
+    "",
+    "## 摘要",
+    "",
+    fields.summary,
+    "",
+    "## 更新或遗忘条件",
+    "",
+    fields.forgetCondition,
     "",
   ].join("\n");
 }

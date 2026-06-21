@@ -10,9 +10,11 @@ import {
 } from "./memory/memory-commands.js";
 import {
   buildMemoryAugmentedPrompt,
+  isRelevantText,
   parseMemoryTaskMode,
   selectRelevantMemories,
 } from "./memory/memory-context.js";
+import type { MemoryDecayStore } from "./memory/memory-decay-store.js";
 import type { MemoryDraftManager } from "./memory/memory-draft-manager.js";
 import {
   type MemoryRepository,
@@ -45,6 +47,7 @@ export interface MessageProcessorOptions {
   agent: AgentAdapter;
   workspaceStore: BridgeWorkspaceStore;
   memoryRepository: MemoryRepository;
+  decayStore?: MemoryDecayStore;
   autoMemory: AutoMemoryCoordinator;
   highRiskConfirmation: HighRiskConfirmation;
   memoryDrafts: MemoryDraftManager;
@@ -426,12 +429,34 @@ export class MessageProcessor {
     if (useMemory) {
       try {
         const approvedMemories = await memoryRepository.readApprovedMemories();
-        const selectedMemories = selectRelevantMemories(command, approvedMemories);
-        agentPrompt = buildMemoryAugmentedPrompt(command, selectedMemories);
+        const decaySnapshot = this.options.decayStore
+          ? await this.options.decayStore.snapshot()
+          : undefined;
+        const selectedMemories = selectRelevantMemories(command, approvedMemories, {
+          decay: decaySnapshot,
+        });
+        // 永久记忆：新对话首条带一次；其余轮次仅在与本轮相关时带上。
+        const permanentText = await workspaceStore.permanentMemory();
+        let permanentForPrompt: string | undefined;
+        if (permanentText.trim()) {
+          const activeConversation = await workspaceStore.activeConversation();
+          const isConversationStart = activeConversation?.messageCount === 1;
+          if (isConversationStart || isRelevantText(command, permanentText)) {
+            permanentForPrompt = permanentText;
+          }
+        }
+        agentPrompt = buildMemoryAugmentedPrompt(command, selectedMemories, permanentForPrompt);
+        if (this.options.decayStore && selectedMemories.length > 0) {
+          // 提鲜：被选用的非永久记忆刷新时间、累加次数。
+          void this.options.decayStore.touch(
+            selectedMemories.map((memory) => memory.relativePath),
+          );
+        }
         logger.info(
           {
             messageId: event.message_id,
             selectedMemoryCount: selectedMemories.length,
+            permanentMemory: Boolean(permanentForPrompt),
             selectedMemoryCategories: [
               ...new Set(selectedMemories.map((memory) => memory.category)),
             ],
