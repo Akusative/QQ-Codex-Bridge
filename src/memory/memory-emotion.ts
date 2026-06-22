@@ -1,6 +1,19 @@
 import type { TextEmbedder } from "./embedding-client.js";
 import { cosine } from "./memory-retrieval.js";
 
+/** 负面情绪（"旧伤"偏负面）——反刍/侵入念头优先从这些里翻涌。 */
+export const NEGATIVE_EMOTIONS: ReadonlySet<string> = new Set([
+  "难过",
+  "委屈",
+  "愧疚",
+  "失落",
+  "孤独",
+  "吃醋",
+  "烦躁",
+  "害怕",
+  "生气",
+]);
+
 /** 情绪锚点：label 用于匹配/展示，text 拼几个近义词增强 embedding 信号。 */
 export const EMOTION_ANCHORS: ReadonlyArray<{ label: string; text: string }> = [
   { label: "高兴", text: "开心 高兴 快乐 愉悦" },

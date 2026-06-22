@@ -19,6 +19,7 @@ import type { TextEmbedder } from "./memory/embedding-client.js";
 import type { MemoryVectorStore } from "./memory/memory-vector-store.js";
 import { buildHybridRelevance } from "./memory/memory-retrieval.js";
 import type { EmotionPrimer } from "./memory/memory-emotion.js";
+import { maybeIntrude } from "./memory/memory-intrusion.js";
 import type { MemoryDraftManager } from "./memory/memory-draft-manager.js";
 import {
   type ApprovedMemoryEntry,
@@ -60,6 +61,8 @@ export interface MessageProcessorOptions {
   relevanceThreshold?: number;
   spreadDecay?: number;
   spreadThreshold?: number;
+  ruminationRate?: number;
+  ruminationMinAgeDays?: number;
   autoMemory: AutoMemoryCoordinator;
   highRiskConfirmation: HighRiskConfirmation;
   memoryDrafts: MemoryDraftManager;
@@ -480,9 +483,25 @@ export class MessageProcessor {
             permanentForPrompt = permanentText;
           }
         }
-        agentPrompt = buildMemoryAugmentedPrompt(command, selectedMemories, permanentForPrompt);
+        // 反刍/侵入念头：低概率从"阁楼"(老而带情绪的旧伤)随机翻涌一条进上下文（不提鲜，保持它老）。
+        let intrusive: ApprovedMemoryEntry | undefined;
+        if ((this.options.ruminationRate ?? 0) > 0) {
+          const vectorSnap = this.options.vectorStore ? await this.options.vectorStore.snapshot() : undefined;
+          const emotionsOf =
+            this.options.primer && vectorSnap
+              ? (path: string) => this.options.primer!.emotionsOf(vectorSnap(path)?.vector)
+              : undefined;
+          intrusive = maybeIntrude(scopedMemories, selectedMemories, {
+            rate: this.options.ruminationRate ?? 0,
+            minAgeDays: this.options.ruminationMinAgeDays ?? 14,
+            decay: decaySnapshot,
+            emotionsOf,
+          });
+        }
+        const promptMemories = intrusive ? [...selectedMemories, intrusive] : selectedMemories;
+        agentPrompt = buildMemoryAugmentedPrompt(command, promptMemories, permanentForPrompt);
         if (this.options.decayStore && selectedMemories.length > 0) {
-          // 提鲜：被选用的非永久记忆刷新时间、累加次数。
+          // 提鲜：只刷新 relevance 选中的非永久记忆（侵入念头不提鲜）。
           void this.options.decayStore.touch(
             selectedMemories.map((memory) => memory.relativePath),
           );

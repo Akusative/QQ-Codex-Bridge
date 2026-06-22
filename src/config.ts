@@ -31,6 +31,8 @@ const schema = z.object({
   MEMORY_EMOTION_THRESHOLD: z.coerce.number().min(0).max(1).default(0.45),
   MEMORY_SPREAD_DECAY: z.coerce.number().min(0).max(1).default(0.5),
   MEMORY_SPREAD_THRESHOLD: z.coerce.number().min(0).max(1).default(0.6),
+  MEMORY_RUMINATION_RATE: z.coerce.number().min(0).max(1).default(0.06),
+  MEMORY_RUMINATION_MIN_AGE_DAYS: z.coerce.number().int().min(0).default(14),
   LOG_LEVEL: z.enum(["debug", "info", "warn", "error"]).default("info"),
   TASK_TIMEOUT_SECONDS: z.coerce.number().int().positive().default(600),
   QQ_MESSAGE_CHUNK_SIZE: z.coerce.number().int().min(100).max(4_000).default(1_500),

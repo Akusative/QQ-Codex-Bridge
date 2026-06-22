@@ -143,6 +143,8 @@ try {
     relevanceThreshold: config.MEMORY_RELEVANCE_THRESHOLD,
     spreadDecay: config.MEMORY_SPREAD_DECAY,
     spreadThreshold: config.MEMORY_SPREAD_THRESHOLD,
+    ruminationRate: config.MEMORY_RUMINATION_RATE,
+    ruminationMinAgeDays: config.MEMORY_RUMINATION_MIN_AGE_DAYS,
     autoMemory,
     highRiskConfirmation,
     memoryDrafts,
