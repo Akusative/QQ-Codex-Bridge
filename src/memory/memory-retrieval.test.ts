@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from "vitest";
-import { bm25, buildHybridRelevance, cosine, MemoryVectorIndexer } from "./memory-retrieval.js";
+import { bm25, buildHybridRelevance, cosine, MemoryVectorIndexer, spreadActivation } from "./memory-retrieval.js";
 import { EMOTION_ANCHORS, EmotionPrimer } from "./memory-emotion.js";
 import { MemoryVectorStore } from "./memory-vector-store.js";
 import type { TextEmbedder } from "./embedding-client.js";
@@ -93,6 +93,63 @@ describe("buildHybridRelevance", () => {
     const relevance = await buildHybridRelevance("加班", entries, { embedder, vectorStore: store });
     // BM25 命中"加班" → a 仍 > b
     expect(relevance!(entries[0])).toBeGreaterThan(relevance!(entries[1]));
+  });
+});
+
+describe("spreadActivation", () => {
+  const entries = [
+    entry("seed.md", "种子", "加班找领导谈"),
+    entry("near.md", "语义近", "x"),
+    entry("far.md", "无关", "y"),
+    entry("emo.md", "情绪关联", "z"),
+  ];
+  const vecs: Record<string, number[]> = {
+    "seed.md": [1, 0, 0],
+    "near.md": [0.95, 0.31, 0], // 与种子 cosine≈0.95
+    "far.md": [0, 1, 0], // 与种子正交、无情绪交集
+    "emo.md": [0, 1, 0], // 向量远，但与种子共享"难过"
+  };
+  const base: Record<string, number> = { "seed.md": 1, "near.md": 0.1, "far.md": 0.05, "emo.md": 0.05 };
+  const emotions: Record<string, string[]> = { "seed.md": ["难过"], "emo.md": ["难过"], "near.md": [], "far.md": [] };
+  const vectorOf = (p: string) => vecs[p];
+  const baseScores = (p: string) => base[p] ?? 0;
+  const emotionsOf = (p: string) => emotions[p] ?? [];
+
+  it("语义近 / 情绪同的被激活，无关的不变，种子保留自身分", () => {
+    const out = spreadActivation(entries, baseScores, vectorOf, emotionsOf, { decay: 0.5, threshold: 0.6, maxSeeds: 1 });
+    expect(out.get("seed.md")).toBe(1);
+    expect(out.get("near.md")).toBeGreaterThan(0.1); // 语义边
+    expect(out.get("emo.md")).toBeGreaterThan(0.05); // 情绪边
+    expect(out.get("far.md")).toBe(0.05); // 无关
+  });
+
+  it("decay=0 不扩散", () => {
+    const out = spreadActivation(entries, baseScores, vectorOf, emotionsOf, { decay: 0, threshold: 0.6 });
+    expect(out.get("near.md")).toBe(0.1);
+    expect(out.get("emo.md")).toBe(0.05);
+  });
+
+  it("无 emotionsOf 时只走语义边（情绪关联的不被牵）", () => {
+    const out = spreadActivation(entries, baseScores, vectorOf, undefined, { decay: 0.5, threshold: 0.6, maxSeeds: 1 });
+    expect(out.get("near.md")).toBeGreaterThan(0.1);
+    expect(out.get("emo.md")).toBe(0.05);
+  });
+});
+
+describe("buildHybridRelevance 扩散激活", () => {
+  it("与种子关联但话题搜不到的记忆，开扩散后 relevance 被牵高", async () => {
+    const embedder = fakeEmbedder({ "加班": [1, 0, 0], [EMOTION_ANCHORS[1].text]: [0, 0, 1] });
+    const store = new MemoryVectorStore(join(await mkdtemp(join(tmpdir(), "vec-")), "v.json"));
+    await store.set("seed.md", "bge-m3", [1, 0, 1]); // 话题命中 + 难过
+    await store.set("emo.md", "bge-m3", [0, 0, 1]); // 纯难过，话题搜不到
+    const items = [entry("seed.md", "加班", "加班找领导"), entry("emo.md", "哭", "靠着肩膀哭了")];
+    const primer = new EmotionPrimer(embedder, { threshold: 0.45, boost: 1.3 });
+    await primer.init();
+    const opts = { embedder, vectorStore: store, vectorWeight: 1, primer };
+
+    const noSpread = await buildHybridRelevance("加班", items, opts);
+    const withSpread = await buildHybridRelevance("加班", items, { ...opts, spread: { decay: 0.5, threshold: 0.6 } });
+    expect(withSpread!(items[1])).toBeGreaterThan(noSpread!(items[1]));
   });
 });
 

@@ -58,6 +58,8 @@ export interface MessageProcessorOptions {
   primer?: EmotionPrimer;
   vectorWeight?: number;
   relevanceThreshold?: number;
+  spreadDecay?: number;
+  spreadThreshold?: number;
   autoMemory: AutoMemoryCoordinator;
   highRiskConfirmation: HighRiskConfirmation;
   memoryDrafts: MemoryDraftManager;
@@ -457,6 +459,10 @@ export class MessageProcessor {
             vectorStore: this.options.vectorStore,
             vectorWeight: this.options.vectorWeight,
             primer: this.options.primer,
+            spread: {
+              decay: this.options.spreadDecay ?? 0,
+              threshold: this.options.spreadThreshold ?? 0.6,
+            },
           });
         }
         const selectedMemories = selectRelevantMemories(command, scopedMemories, {

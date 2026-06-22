@@ -10,6 +10,8 @@ export interface HybridRelevanceOptions {
   vectorWeight?: number;
   /** 情绪启动：当前心情与记忆情绪匹配则加权。无则跳过。 */
   primer?: EmotionPrimer;
+  /** 扩散激活：从种子顺关联牵出更多。decay<=0 关闭。 */
+  spread?: { decay: number; threshold: number };
 }
 
 /**
@@ -54,7 +56,73 @@ export async function buildHybridRelevance(
       : 1;
     scores.set(entry.relativePath, base * emotionBoost);
   });
+
+  // 扩散激活：从种子顺语义/情绪关联牵出更多记忆，抬高它们的相关度。
+  if (options.spread && options.spread.decay > 0) {
+    const activated = spreadActivation(
+      entries,
+      (path) => scores.get(path) ?? 0,
+      (path) => lookup(path)?.vector,
+      options.primer ? (path) => options.primer!.emotionsOf(lookup(path)?.vector) : undefined,
+      { decay: options.spread.decay, threshold: options.spread.threshold },
+    );
+    return (entry) => activated.get(entry.relativePath) ?? 0;
+  }
   return (entry) => scores.get(entry.relativePath) ?? 0;
+}
+
+const SPREAD_MAX_SEEDS = 2;
+const SPREAD_EMOTION_EDGE = 0.7;
+
+/**
+ * 扩散激活：取分数最高的几个种子，把与它们语义近 / 情绪同的记忆按衰减后的激活值抬高。
+ * 只抬高、不压低（combined = max(base, activation)），种子保留自身分。
+ */
+export function spreadActivation(
+  entries: ReadonlyArray<ApprovedMemoryEntry>,
+  baseScores: (path: string) => number,
+  vectorOf: (path: string) => number[] | undefined,
+  emotionsOf: ((path: string) => string[]) | undefined,
+  params: { decay: number; threshold: number; maxSeeds?: number; emotionEdge?: number },
+): Map<string, number> {
+  const maxSeeds = params.maxSeeds ?? SPREAD_MAX_SEEDS;
+  const emotionEdge = params.emotionEdge ?? SPREAD_EMOTION_EDGE;
+  const combined = new Map<string, number>();
+  for (const entry of entries) combined.set(entry.relativePath, baseScores(entry.relativePath));
+  if (params.decay <= 0) return combined;
+
+  const seeds = [...entries]
+    .map((entry) => ({ entry, score: baseScores(entry.relativePath) }))
+    .filter((item) => item.score > 0)
+    .sort((a, b) => b.score - a.score)
+    .slice(0, maxSeeds);
+  if (seeds.length === 0) return combined;
+
+  const seedPaths = new Set(seeds.map((s) => s.entry.relativePath));
+  const emotionSets = emotionsOf
+    ? new Map(entries.map((e) => [e.relativePath, new Set(emotionsOf(e.relativePath))]))
+    : undefined;
+
+  for (const { entry, score: seedScore } of seeds) {
+    const seedVec = vectorOf(entry.relativePath);
+    const seedEmotions = emotionSets?.get(entry.relativePath);
+    for (const other of entries) {
+      if (seedPaths.has(other.relativePath)) continue;
+      const otherVec = vectorOf(other.relativePath);
+      const semantic = seedVec && otherVec ? cosine(seedVec, otherVec) : 0;
+      const semanticEdge = semantic >= params.threshold ? semantic : 0;
+      const sharesEmotion =
+        seedEmotions && emotionSets
+          ? [...seedEmotions].some((label) => emotionSets.get(other.relativePath)?.has(label))
+          : false;
+      const edge = Math.max(semanticEdge, sharesEmotion ? emotionEdge : 0);
+      if (edge <= 0) continue;
+      const activation = seedScore * params.decay * edge;
+      const current = combined.get(other.relativePath) ?? 0;
+      if (activation > current) combined.set(other.relativePath, activation);
+    }
+  }
+  return combined;
 }
 
 /** 记忆向量索引：入库即算、启动回填。失败容错（下次再补）。 */

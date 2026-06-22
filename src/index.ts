@@ -141,6 +141,8 @@ try {
     primer,
     vectorWeight: config.MEMORY_VECTOR_WEIGHT,
     relevanceThreshold: config.MEMORY_RELEVANCE_THRESHOLD,
+    spreadDecay: config.MEMORY_SPREAD_DECAY,
+    spreadThreshold: config.MEMORY_SPREAD_THRESHOLD,
     autoMemory,
     highRiskConfirmation,
     memoryDrafts,
