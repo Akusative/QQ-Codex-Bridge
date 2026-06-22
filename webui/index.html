@@ -325,6 +325,13 @@
         <input id="persona-name" maxlength="80" placeholder="给这个角色起个好认的名字" required />
         <label for="persona-content">核心设定（可选）</label>
         <textarea id="persona-content" rows="5" placeholder="这里只写最核心的语气或行为边界；详细设定可以拆成多份文档。"></textarea>
+        <label for="persona-recall-style">回忆风格</label>
+        <select id="persona-recall-style">
+          <option value="balanced">均衡</option>
+          <option value="emotional">情感型（顺情绪翻旧账）</option>
+          <option value="narrative">叙事型（顺时间线）</option>
+          <option value="analytical">分析型（顺逻辑，少胡思乱想）</option>
+        </select>
         <div class="persona-documents-editor">
           <div class="document-editor-heading"><div><strong>人设资料文档</strong><p>可一次选择多份；保存后共同组成人设。</p></div><span id="persona-document-count" class="count-badge">0</span></div>
           <div id="persona-document-list" class="document-list"></div>

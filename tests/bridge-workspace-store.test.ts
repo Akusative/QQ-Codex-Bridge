@@ -52,6 +52,16 @@ describe("BridgeWorkspaceStore", () => {
     expect(await store.conversationPermanentMemory(a.id)).toBe("");
   });
 
+  it("stores persona recallStyle and defaults legacy personas to balanced", async () => {
+    const root = await mkdtemp(join(tmpdir(), "bridge-workspace-"));
+    const store = new BridgeWorkspaceStore(root, { qq: "10001", nickname: "一号" });
+    await store.initialize();
+    const saved = await store.savePersona({ category: "日常", name: "情感角色", content: "", recallStyle: "emotional" });
+    expect(saved.recallStyle).toBe("emotional");
+    const plain = await store.savePersona({ category: "日常", name: "默认角色", content: "" });
+    expect(plain.recallStyle).toBe("balanced"); // 不传 → balanced
+  });
+
   it("retrieves relevant excerpts from multiple persona documents", async () => {
     const root = await mkdtemp(join(tmpdir(), "bridge-workspace-"));
     const store = new BridgeWorkspaceStore(root, { qq: "10001", nickname: "一号" });

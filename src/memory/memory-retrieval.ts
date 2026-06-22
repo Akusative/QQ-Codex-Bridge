@@ -10,8 +10,13 @@ export interface HybridRelevanceOptions {
   vectorWeight?: number;
   /** 情绪启动：当前心情与记忆情绪匹配则加权。无则跳过。 */
   primer?: EmotionPrimer;
-  /** 扩散激活：从种子顺关联牵出更多。decay<=0 关闭。 */
-  spread?: { decay: number; threshold: number };
+  /** 扩散激活：从种子顺关联牵出更多。decay<=0 关闭。weights 按人设回忆风格调三种边。 */
+  spread?: {
+    decay: number;
+    threshold: number;
+    weights?: { semantic: number; emotion: number; time: number };
+    timeWindowDays?: number;
+  };
 }
 
 /**
@@ -64,7 +69,12 @@ export async function buildHybridRelevance(
       (path) => scores.get(path) ?? 0,
       (path) => lookup(path)?.vector,
       options.primer ? (path) => options.primer!.emotionsOf(lookup(path)?.vector) : undefined,
-      { decay: options.spread.decay, threshold: options.spread.threshold },
+      {
+        decay: options.spread.decay,
+        threshold: options.spread.threshold,
+        weights: options.spread.weights,
+        timeWindowDays: options.spread.timeWindowDays,
+      },
     );
     return (entry) => activated.get(entry.relativePath) ?? 0;
   }
@@ -83,10 +93,18 @@ export function spreadActivation(
   baseScores: (path: string) => number,
   vectorOf: (path: string) => number[] | undefined,
   emotionsOf: ((path: string) => string[]) | undefined,
-  params: { decay: number; threshold: number; maxSeeds?: number; emotionEdge?: number },
+  params: {
+    decay: number;
+    threshold: number;
+    maxSeeds?: number;
+    emotionEdge?: number;
+    weights?: { semantic: number; emotion: number; time: number };
+    timeWindowDays?: number;
+  },
 ): Map<string, number> {
   const maxSeeds = params.maxSeeds ?? SPREAD_MAX_SEEDS;
   const emotionEdge = params.emotionEdge ?? SPREAD_EMOTION_EDGE;
+  const timeWindow = params.timeWindowDays ?? 14;
   const combined = new Map<string, number>();
   for (const entry of entries) combined.set(entry.relativePath, baseScores(entry.relativePath));
   if (params.decay <= 0) return combined;
@@ -115,7 +133,19 @@ export function spreadActivation(
         seedEmotions && emotionSets
           ? [...seedEmotions].some((label) => emotionSets.get(other.relativePath)?.has(label))
           : false;
-      const edge = Math.max(semanticEdge, sharesEmotion ? emotionEdge : 0);
+      // 有 weights（人设风格）→ 三种边加权取最大；否则保持旧行为（语义 + 情绪 0.7，无时间边）。
+      let edge: number;
+      if (params.weights) {
+        const w = params.weights;
+        const timeEdge = timeProximity(entry.updatedAt, other.updatedAt, timeWindow);
+        edge = Math.max(
+          w.semantic * semanticEdge,
+          w.emotion * (sharesEmotion ? 1 : 0),
+          w.time * timeEdge,
+        );
+      } else {
+        edge = Math.max(semanticEdge, sharesEmotion ? emotionEdge : 0);
+      }
       if (edge <= 0) continue;
       const activation = seedScore * params.decay * edge;
       const current = combined.get(other.relativePath) ?? 0;
@@ -123,6 +153,15 @@ export function spreadActivation(
     }
   }
   return combined;
+}
+
+/** 时间边：两条记忆 updatedAt 越近越强（窗口内线性，超窗口为 0）。 */
+export function timeProximity(a: string, b: string, windowDays: number): number {
+  const ta = new Date(a).getTime();
+  const tb = new Date(b).getTime();
+  if (Number.isNaN(ta) || Number.isNaN(tb) || windowDays <= 0) return 0;
+  const diffDays = Math.abs(ta - tb) / 86_400_000;
+  return Math.max(0, 1 - diffDays / windowDays);
 }
 
 /** 记忆向量索引：入库即算、启动回填。失败容错（下次再补）。 */

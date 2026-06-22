@@ -145,6 +145,7 @@ try {
     spreadThreshold: config.MEMORY_SPREAD_THRESHOLD,
     ruminationRate: config.MEMORY_RUMINATION_RATE,
     ruminationMinAgeDays: config.MEMORY_RUMINATION_MIN_AGE_DAYS,
+    timeEdgeDays: config.MEMORY_TIME_EDGE_DAYS,
     autoMemory,
     highRiskConfirmation,
     memoryDrafts,

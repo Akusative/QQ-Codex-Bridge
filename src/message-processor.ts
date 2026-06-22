@@ -20,6 +20,7 @@ import type { MemoryVectorStore } from "./memory/memory-vector-store.js";
 import { buildHybridRelevance } from "./memory/memory-retrieval.js";
 import type { EmotionPrimer } from "./memory/memory-emotion.js";
 import { maybeIntrude } from "./memory/memory-intrusion.js";
+import { recallStyleProfile } from "./memory/memory-recall-style.js";
 import type { MemoryDraftManager } from "./memory/memory-draft-manager.js";
 import {
   type ApprovedMemoryEntry,
@@ -61,6 +62,7 @@ export interface MessageProcessorOptions {
   relevanceThreshold?: number;
   spreadDecay?: number;
   spreadThreshold?: number;
+  timeEdgeDays?: number;
   ruminationRate?: number;
   ruminationMinAgeDays?: number;
   autoMemory: AutoMemoryCoordinator;
@@ -454,6 +456,8 @@ export class MessageProcessor {
               return !owner || owner === conversationId;
             })
           : approvedMemories;
+        // 当前人设的回忆风格 → 扩散边权重 + 反刍倍率。
+        const recallProfile = recallStyleProfile((await workspaceStore.activePersona())?.recallStyle);
         // 向量混合检索：能用 embedder 就用，失败/未配则 relevance=undefined → 回退关键词。
         let relevance: ((entry: ApprovedMemoryEntry) => number) | undefined;
         if (this.options.embedder && this.options.vectorStore) {
@@ -465,6 +469,8 @@ export class MessageProcessor {
             spread: {
               decay: this.options.spreadDecay ?? 0,
               threshold: this.options.spreadThreshold ?? 0.6,
+              weights: recallProfile.weights,
+              timeWindowDays: this.options.timeEdgeDays,
             },
           });
         }
@@ -484,15 +490,17 @@ export class MessageProcessor {
           }
         }
         // 反刍/侵入念头：低概率从"阁楼"(老而带情绪的旧伤)随机翻涌一条进上下文（不提鲜，保持它老）。
+        // 反刍倾向按人设风格缩放（情感型更爱翻旧账、分析型更少）。
+        const ruminationRate = (this.options.ruminationRate ?? 0) * recallProfile.ruminationMult;
         let intrusive: ApprovedMemoryEntry | undefined;
-        if ((this.options.ruminationRate ?? 0) > 0) {
+        if (ruminationRate > 0) {
           const vectorSnap = this.options.vectorStore ? await this.options.vectorStore.snapshot() : undefined;
           const emotionsOf =
             this.options.primer && vectorSnap
               ? (path: string) => this.options.primer!.emotionsOf(vectorSnap(path)?.vector)
               : undefined;
           intrusive = maybeIntrude(scopedMemories, selectedMemories, {
-            rate: this.options.ruminationRate ?? 0,
+            rate: ruminationRate,
             minAgeDays: this.options.ruminationMinAgeDays ?? 14,
             decay: decaySnapshot,
             emotionsOf,

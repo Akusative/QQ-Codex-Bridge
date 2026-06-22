@@ -136,6 +136,26 @@ describe("spreadActivation", () => {
   });
 });
 
+describe("spreadActivation 时间边（人设回忆风格）", () => {
+  const seed: ApprovedMemoryEntry = { relativePath: "seed.md", title: "种子", category: "event", updatedAt: "2026-06-20", summary: "x" };
+  const sameTime: ApprovedMemoryEntry = { relativePath: "same.md", title: "同期", category: "event", updatedAt: "2026-06-21", summary: "y" };
+  const longAgo: ApprovedMemoryEntry = { relativePath: "old.md", title: "很久前", category: "event", updatedAt: "2026-01-01", summary: "z" };
+  const all = [seed, sameTime, longAgo];
+  const baseScores = (p: string) => (p === "seed.md" ? 1 : 0);
+
+  it("weights 偏时间时，时间相近的被激活、时间远的不被", () => {
+    const out = spreadActivation(all, baseScores, () => undefined, undefined, {
+      decay: 0.5,
+      threshold: 0.6,
+      maxSeeds: 1,
+      weights: { semantic: 0, emotion: 0, time: 1 }, // 只走时间边
+      timeWindowDays: 14,
+    });
+    expect(out.get("same.md")).toBeGreaterThan(0); // 差 1 天 → 激活
+    expect(out.get("old.md")).toBe(0); // 差 >14 天 → 时间边 0
+  });
+});
+
 describe("buildHybridRelevance 扩散激活", () => {
   it("与种子关联但话题搜不到的记忆，开扩散后 relevance 被牵高", async () => {
     const embedder = fakeEmbedder({ "加班": [1, 0, 0], [EMOTION_ANCHORS[1].text]: [0, 0, 1] });

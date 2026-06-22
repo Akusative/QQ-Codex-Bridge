@@ -23,6 +23,7 @@ import {
   fuzzyMemoryDate,
   selectRelevantMemories,
 } from "../memory/memory-context.js";
+import { isRecallStyle } from "../memory/memory-recall-style.js";
 import { MemoryDraftManager } from "../memory/memory-draft-manager.js";
 import {
   type ApprovedMemoryEntry,
@@ -377,12 +378,13 @@ export class WebUiServer {
       const category = typeof body.category === "string" ? body.category.trim() : "";
       const name = typeof body.name === "string" ? body.name.trim() : "";
       const content = typeof body.content === "string" ? body.content.trim() : "";
+      const recallStyle = isRecallStyle(body.recallStyle) ? body.recallStyle : undefined;
       if (!category || !name || name.length > 80 || content.length > 200_000) {
         this.sendJson(response, 400, { error: "请填写分类和名称；核心设定内容过长时请拆成文档上传。" });
         return;
       }
       if (this.rejectSensitiveText(response, `${name}\n${content}`)) return;
-      const persona = await store.savePersona({ id, category, name, content });
+      const persona = await store.savePersona({ id, category, name, content, recallStyle });
       this.sendJson(response, 200, { persona });
       return;
     }

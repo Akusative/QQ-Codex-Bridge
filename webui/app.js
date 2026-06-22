@@ -388,6 +388,7 @@ function openPersonaEditor(persona = null, selectAfterSave = false) {
   $("#persona-category").value = persona?.category || "";
   $("#persona-name").value = persona?.name || "";
   $("#persona-content").value = persona?.content || "";
+  $("#persona-recall-style").value = persona?.recallStyle || "balanced";
   $("#persona-documents").value = "";
   state.editingPersonaId = persona?.id || null;
   state.pendingPersonaFiles = [];
@@ -415,6 +416,7 @@ async function savePersona(event) {
         category: $("#persona-category").value,
         name: $("#persona-name").value,
         content: $("#persona-content").value,
+        recallStyle: $("#persona-recall-style").value,
       },
     });
     state.editingPersonaId = result.persona.id;

@@ -10,6 +10,7 @@ import {
   writeFile,
 } from "node:fs/promises";
 import { dirname, join, resolve } from "node:path";
+import { type RecallStyle, isRecallStyle } from "../memory/memory-recall-style.js";
 
 export interface BridgeAccountIdentity {
   qq: string;
@@ -23,6 +24,7 @@ export interface PersonaRecord {
   content: string;
   documents: PersonaDocumentRecord[];
   enabled: boolean;
+  recallStyle: RecallStyle;
   createdAt: string;
   updatedAt: string;
 }
@@ -188,6 +190,7 @@ export class BridgeWorkspaceStore {
     category: string;
     name: string;
     content: string;
+    recallStyle?: RecallStyle;
   }): Promise<PersonaRecord> {
     const personas = await this.personas();
     const now = new Date().toISOString();
@@ -199,6 +202,7 @@ export class BridgeWorkspaceStore {
       content: input.content.trim(),
       documents: existing?.documents ?? [],
       enabled: existing?.enabled ?? true,
+      recallStyle: isRecallStyle(input.recallStyle) ? input.recallStyle : existing?.recallStyle ?? "balanced",
       createdAt: existing?.createdAt ?? now,
       updatedAt: now,
     };
@@ -631,7 +635,11 @@ export class BridgeWorkspaceStore {
   private async personas(): Promise<PersonaRecord[]> {
     await this.initializeDirectories();
     const records = await this.readJson<PersonaRecord[]>(this.personasPath(), []);
-    return records.map((record) => ({ ...record, documents: record.documents ?? [] }));
+    return records.map((record) => ({
+      ...record,
+      documents: record.documents ?? [],
+      recallStyle: isRecallStyle(record.recallStyle) ? record.recallStyle : "balanced",
+    }));
   }
 
   private async personaDocumentContext(persona: PersonaRecord, query: string): Promise<string> {
