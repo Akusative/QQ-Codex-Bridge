@@ -1,12 +1,15 @@
 import type { ApprovedMemoryEntry } from "./memory-repository.js";
 import type { TextEmbedder } from "./embedding-client.js";
 import type { MemoryVectorStore } from "./memory-vector-store.js";
+import type { EmotionPrimer } from "./memory-emotion.js";
 
 export interface HybridRelevanceOptions {
   embedder: TextEmbedder;
   vectorStore: MemoryVectorStore;
   /** 向量占比，其余给 BM25。默认 0.85。 */
   vectorWeight?: number;
+  /** 情绪启动：当前心情与记忆情绪匹配则加权。无则跳过。 */
+  primer?: EmotionPrimer;
 }
 
 /**
@@ -40,9 +43,16 @@ export async function buildHybridRelevance(
 
   const bm25Scores = normalize(bm25(query, entries));
 
+  // 情绪启动：当前对话向量命中的情绪 = 当前心情；情绪匹配的记忆加权。
+  const mood = options.primer ? new Set(options.primer.emotionsOf(queryVector)) : undefined;
+
   const scores = new Map<string, number>();
   entries.forEach((entry, index) => {
-    scores.set(entry.relativePath, weight * vectorScores[index] + (1 - weight) * bm25Scores[index]);
+    const base = weight * vectorScores[index] + (1 - weight) * bm25Scores[index];
+    const emotionBoost = options.primer
+      ? options.primer.boostFor(lookup(entry.relativePath)?.vector, mood)
+      : 1;
+    scores.set(entry.relativePath, base * emotionBoost);
   });
   return (entry) => scores.get(entry.relativePath) ?? 0;
 }

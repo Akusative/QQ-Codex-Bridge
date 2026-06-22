@@ -1,5 +1,6 @@
 import { describe, it, expect, vi } from "vitest";
 import { bm25, buildHybridRelevance, cosine, MemoryVectorIndexer } from "./memory-retrieval.js";
+import { EMOTION_ANCHORS, EmotionPrimer } from "./memory-emotion.js";
 import { MemoryVectorStore } from "./memory-vector-store.js";
 import type { TextEmbedder } from "./embedding-client.js";
 import type { ApprovedMemoryEntry } from "./memory-repository.js";
@@ -62,6 +63,27 @@ describe("buildHybridRelevance", () => {
     const store = new MemoryVectorStore(join(await mkdtemp(join(tmpdir(), "vec-")), "v.json"));
     const relevance = await buildHybridRelevance("x", entries, { embedder, vectorStore: store });
     expect(relevance).toBeUndefined();
+  });
+
+  it("情绪启动：情绪匹配的记忆反超话题更相关的记忆", async () => {
+    // 维度：[话题, 高兴, 难过]。query=加班但委屈(带难过情绪)。
+    const embedder = fakeEmbedder({
+      "加班但委屈": [1, 0, 0.8],
+      [EMOTION_ANCHORS[0].text]: [0, 1, 0], // 高兴
+      [EMOTION_ANCHORS[1].text]: [0, 0, 1], // 难过
+    });
+    const store = new MemoryVectorStore(join(await mkdtemp(join(tmpdir(), "vec-")), "v.json"));
+    await store.set("a.md", "bge-m3", [1, 0, 0]); // 纯话题相关、无情绪
+    await store.set("b.md", "bge-m3", [0, 0, 1]); // 话题略弱、但情绪=难过 与当前心情匹配
+    const items = [entry("a.md", "加班", "加班的事"), entry("b.md", "难过", "那次很难过")];
+
+    const noPrimer = await buildHybridRelevance("加班但委屈", items, { embedder, vectorStore: store, vectorWeight: 1 });
+    expect(noPrimer!(items[0])).toBeGreaterThan(noPrimer!(items[1])); // 无情绪：a 赢
+
+    const primer = new EmotionPrimer(embedder, { threshold: 0.45, boost: 1.3 });
+    await primer.init();
+    const withPrimer = await buildHybridRelevance("加班但委屈", items, { embedder, vectorStore: store, vectorWeight: 1, primer });
+    expect(withPrimer!(items[1])).toBeGreaterThan(withPrimer!(items[0])); // 情绪启动：b 反超
   });
 
   it("模型不匹配的旧向量按 0 分（仍可被 BM25 救回）", async () => {

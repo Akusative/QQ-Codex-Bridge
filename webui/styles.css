@@ -1007,8 +1007,9 @@ textarea:focus, input:focus, select:focus {
 .category { color: var(--accent); font-size: .72rem; font-weight: 800; text-transform: uppercase; letter-spacing: 0.05em; }
 
 .memory-item.compact { padding: 12px 18px; align-items: flex-start; }
-.memory-meta { display: flex; align-items: center; gap: 10px; margin-bottom: 4px; }
+.memory-meta { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-bottom: 4px; }
 .memory-date { color: var(--text-secondary); font-size: .72rem; font-weight: 700; }
+.emotion-tag { font-size: .68rem; font-weight: 700; color: var(--accent); background: rgba(79, 104, 190, 0.1); border-radius: 8px; padding: 1px 7px; }
 .memory-summary { margin: 0; font-size: .88rem; line-height: 1.5; color: var(--text); overflow: hidden; text-overflow: ellipsis; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
 .memory-actions { display: flex; gap: 8px; flex-shrink: 0; align-items: center; }
 .memory-edit { width: 100%; margin-top: 6px; resize: vertical; font: inherit; padding: 8px 10px; border: 1px solid var(--line-strong); border-radius: 10px; background: #fff; }

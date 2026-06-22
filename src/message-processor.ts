@@ -18,6 +18,7 @@ import type { MemoryDecayStore } from "./memory/memory-decay-store.js";
 import type { TextEmbedder } from "./memory/embedding-client.js";
 import type { MemoryVectorStore } from "./memory/memory-vector-store.js";
 import { buildHybridRelevance } from "./memory/memory-retrieval.js";
+import type { EmotionPrimer } from "./memory/memory-emotion.js";
 import type { MemoryDraftManager } from "./memory/memory-draft-manager.js";
 import {
   type ApprovedMemoryEntry,
@@ -54,6 +55,7 @@ export interface MessageProcessorOptions {
   decayStore?: MemoryDecayStore;
   embedder?: TextEmbedder;
   vectorStore?: MemoryVectorStore;
+  primer?: EmotionPrimer;
   vectorWeight?: number;
   relevanceThreshold?: number;
   autoMemory: AutoMemoryCoordinator;
@@ -454,6 +456,7 @@ export class MessageProcessor {
             embedder: this.options.embedder,
             vectorStore: this.options.vectorStore,
             vectorWeight: this.options.vectorWeight,
+            primer: this.options.primer,
           });
         }
         const selectedMemories = selectRelevantMemories(command, scopedMemories, {

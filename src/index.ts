@@ -16,6 +16,7 @@ import { MemoryVectorStore } from "./memory/memory-vector-store.js";
 import { MemoryMaintenanceCoordinator } from "./memory/memory-maintenance.js";
 import { SiliconFlowEmbedder } from "./memory/embedding-client.js";
 import { MemoryVectorIndexer } from "./memory/memory-retrieval.js";
+import { EmotionPrimer } from "./memory/memory-emotion.js";
 import { AutoMemoryCoordinator } from "./memory/auto-memory-coordinator.js";
 import { MessageProcessor } from "./message-processor.js";
 import { MessagePipeline } from "./pipeline/message-pipeline.js";
@@ -89,8 +90,23 @@ try {
       })
     : undefined;
   const vectorIndexer = embedder ? new MemoryVectorIndexer(embedder, vectorStore) : undefined;
+  let primer: EmotionPrimer | undefined;
   if (embedder) {
     logger.info({ model: config.MEMORY_EMBED_MODEL }, "Vector memory retrieval is enabled");
+    try {
+      const built = new EmotionPrimer(embedder, {
+        threshold: config.MEMORY_EMOTION_THRESHOLD,
+        boost: config.MEMORY_EMOTION_BOOST,
+      });
+      await built.init();
+      primer = built;
+      logger.info("Emotion priming is enabled");
+    } catch (error) {
+      logger.warn(
+        { errorType: error instanceof Error ? error.name : "unknown" },
+        "Emotion priming anchors failed to embed; continuing without it",
+      );
+    }
   }
   const memoryMaintenance = new MemoryMaintenanceCoordinator({
     memory: memoryRepository,
@@ -122,6 +138,7 @@ try {
     decayStore,
     embedder,
     vectorStore,
+    primer,
     vectorWeight: config.MEMORY_VECTOR_WEIGHT,
     relevanceThreshold: config.MEMORY_RELEVANCE_THRESHOLD,
     autoMemory,
@@ -204,6 +221,7 @@ try {
       decayStore,
       vectorIndexer,
       memoryVectorStore: vectorStore,
+      emotionPrimer: embedder ? primer : undefined,
       allowedWorkspaceRoot: config.ALLOWED_WORKSPACE_ROOT,
       autoMemory,
       workdir: config.CODEX_WORKDIR,

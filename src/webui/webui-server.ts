@@ -86,7 +86,11 @@ export interface WebUiServerOptions {
   workspaceStore?: BridgeWorkspaceStore;
   decayStore?: MemoryScopeStore;
   vectorIndexer?: { index(relativePath: string, text: string): Promise<void> };
-  memoryVectorStore?: { removeMany(ids: ReadonlyArray<string>): Promise<void> };
+  memoryVectorStore?: {
+    removeMany(ids: ReadonlyArray<string>): Promise<void>;
+    snapshot?(): Promise<(id: string) => { vector: number[] } | undefined>;
+  };
+  emotionPrimer?: { emotionsOf(vector: ReadonlyArray<number> | undefined): string[] };
   personaDocumentExtractorScriptPath?: string;
   softwareUpdate?: SoftwareUpdateController;
   systemControl?: BridgeSystemController;
@@ -710,6 +714,10 @@ export class WebUiServer {
     if (request.method === "GET" && url.pathname === "/api/memories") {
       const conversationId = await this.resolveConversationId(url.searchParams.get("conversationId"));
       const entries = await this.scopedMemories(conversationId);
+      const vectorLookup =
+        this.options.emotionPrimer && this.options.memoryVectorStore?.snapshot
+          ? await this.options.memoryVectorStore.snapshot()
+          : undefined;
       const mapped = entries.map((entry, index) => ({
         index: index + 1,
         title: entry.title,
@@ -717,6 +725,10 @@ export class WebUiServer {
         summary: entry.summary,
         updatedAt: entry.updatedAt,
         fuzzyDate: fuzzyMemoryDate(entry.updatedAt),
+        emotions:
+          this.options.emotionPrimer && vectorLookup
+            ? this.options.emotionPrimer.emotionsOf(vectorLookup(entry.relativePath)?.vector)
+            : [],
       }));
       this.sendJson(response, 200, { entries: mapped, conversationId });
       return;

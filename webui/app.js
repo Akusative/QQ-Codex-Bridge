@@ -728,6 +728,12 @@ function renderMemoryRow(entry) {
   category.className = "category";
   category.textContent = categoryLabel(entry.category);
   meta.append(date, category);
+  for (const emotion of entry.emotions || []) {
+    const tag = document.createElement("span");
+    tag.className = "emotion-tag";
+    tag.textContent = emotion;
+    meta.append(tag);
+  }
   const text = document.createElement("p");
   text.className = "memory-summary";
   text.textContent = entry.summary || entry.title;
