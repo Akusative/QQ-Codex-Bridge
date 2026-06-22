@@ -279,7 +279,18 @@ try {
   process.once("SIGTERM", () => void shutdown());
 } catch (error) {
   const logger = createLogger("error");
-  logger.error({ error }, "Bridge configuration is incomplete or invalid");
+  const code = (error as NodeJS.ErrnoException | undefined)?.code;
+  if (code === "EADDRINUSE") {
+    const err = error as NodeJS.ErrnoException & { address?: string; port?: number };
+    logger.error(
+      { error },
+      `端口被占用，Bridge 无法启动（${err.address ?? ""}:${err.port ?? ""}）。可能有旧实例没退出——先结束占用该端口的进程或重启服务器。`,
+    );
+  } else if (error instanceof Error && error.name === "ZodError") {
+    logger.error({ error }, "Bridge configuration is incomplete or invalid");
+  } else {
+    logger.error({ error }, error instanceof Error ? `Bridge 启动失败：${error.message}` : "Bridge failed to start");
+  }
   process.exitCode = 1;
 }
 

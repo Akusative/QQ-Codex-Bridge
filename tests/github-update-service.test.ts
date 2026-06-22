@@ -1,7 +1,7 @@
 import { mkdir, mkdtemp, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import {
   compareVersions,
   GitHubUpdateService,
@@ -115,5 +115,42 @@ describe("GitHubUpdateService", () => {
     });
 
     await expect(service.localStatus()).resolves.toBeNull();
+  });
+
+  it("启动更新器用 powershell 绝对路径并挂上派生错误处理", async () => {
+    const root = await updaterRoot();
+    let spawnedCmd = "";
+    const child = { on: vi.fn(), unref: vi.fn() };
+    const service = new GitHubUpdateService({
+      installRoot: root,
+      currentVersion: "0.1.0",
+      repository: "Akusative/QQ-Codex-Bridge",
+      platform: "win32",
+      fetchImpl: async () =>
+        new Response(
+          JSON.stringify({
+            tag_name: "v0.2.0",
+            html_url: "https://example.invalid/r",
+            published_at: "2026-06-20T00:00:00Z",
+            draft: false,
+            prerelease: false,
+            assets: [
+              { name: "QQ-Codex-Bridge-Windows-Update.zip", browser_download_url: "https://example.invalid/u.zip" },
+              { name: "QQ-Codex-Bridge-Windows-Update.zip.sha256", browser_download_url: "https://example.invalid/u.sha256" },
+            ],
+          }),
+          { status: 200 },
+        ),
+      spawnImpl: ((command: string) => {
+        spawnedCmd = command;
+        return child;
+      }) as never,
+    });
+
+    const result = await service.startUpdate();
+    expect(result.version).toBe("0.2.0");
+    expect(spawnedCmd.toLowerCase()).toMatch(/powershell\.exe$/);
+    expect(child.on).toHaveBeenCalledWith("error", expect.any(Function));
+    expect(child.unref).toHaveBeenCalled();
   });
 });

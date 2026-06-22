@@ -1,5 +1,5 @@
 import { spawn, type ChildProcess } from "node:child_process";
-import { copyFile, mkdir, readFile } from "node:fs/promises";
+import { copyFile, mkdir, open, readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 
 const DEFAULT_ASSET_NAME = "QQ-Codex-Bridge-Windows-Update.zip";
@@ -158,7 +158,18 @@ export class GitHubUpdateService implements SoftwareUpdateController {
     await mkdir(runnerDirectory, { recursive: true });
     await copyFile(sourceScript, runnerScript);
 
-    const child: ChildProcess = this.spawnImpl("powershell.exe", [
+    // 把更新器输出写进日志（不再 stdio:"ignore" 静默吞错）。
+    const runnerLog = join(runnerDirectory, `runner-${Date.now()}.log`);
+    const log = await open(runnerLog, "a");
+    // powershell 绝对路径：避免派生环境 PATH 没有 System32 时进程起来却不执行。
+    const powershell = join(
+      process.env.SystemRoot ?? "C:\\Windows",
+      "System32",
+      "WindowsPowerShell",
+      "v1.0",
+      "powershell.exe",
+    );
+    const child: ChildProcess = this.spawnImpl(powershell, [
       "-NoProfile",
       "-ExecutionPolicy", "Bypass",
       "-File", runnerScript,
@@ -170,10 +181,24 @@ export class GitHubUpdateService implements SoftwareUpdateController {
     ], {
       cwd: this.options.installRoot,
       detached: true,
-      stdio: "ignore",
+      stdio: ["ignore", log.fd, log.fd],
       windowsHide: true,
     });
+    // 派生失败（找不到 powershell 等）不再静默：写进 update-status.json。
+    child.on("error", (error) => {
+      void writeFile(
+        join(this.options.installRoot, "data", "update-status.json"),
+        JSON.stringify({
+          state: "failed",
+          message: `更新器启动失败：${error instanceof Error ? error.message : String(error)}`,
+          version: status.latestVersion,
+          updatedAt: new Date().toISOString(),
+        }),
+        "utf8",
+      ).catch(() => undefined);
+    });
     child.unref();
+    await log.close();
     return {
       version: status.latestVersion,
       message: "更新程序已启动；Bridge 将短暂离线并自动重启。",
