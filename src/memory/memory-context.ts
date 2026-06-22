@@ -50,7 +50,8 @@ export function selectRelevantMemories(
       const record = limits.decay?.(entry.relativePath);
       const reference = record?.lastReferencedAt || entry.updatedAt;
       const weight = always ? 1 : recencyWeight(ageInDays(reference, now));
-      const refBoost = 1 + Math.min(record?.referenceCount ?? 0, 5) * 0.1;
+      // 强化加成：对数放大（被反复提及/合并去重的记忆更"黏"），可观但不失控（≈ 1×~2×）。
+      const refBoost = 1 + Math.min(Math.log2(1 + (record?.referenceCount ?? 0)), 5) * 0.2;
       return { entry, always, score, effective: score * weight * refBoost };
     })
     .filter((item) => item.always || includeAll || passesScore(item.score))

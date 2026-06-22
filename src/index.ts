@@ -13,6 +13,7 @@ import { MemoryDraftManager } from "./memory/memory-draft-manager.js";
 import { MemoryRepository } from "./memory/memory-repository.js";
 import { MemoryDecayStore } from "./memory/memory-decay-store.js";
 import { MemoryVectorStore } from "./memory/memory-vector-store.js";
+import { MemoryMaintenanceCoordinator } from "./memory/memory-maintenance.js";
 import { SiliconFlowEmbedder } from "./memory/embedding-client.js";
 import { MemoryVectorIndexer } from "./memory/memory-retrieval.js";
 import { AutoMemoryCoordinator } from "./memory/auto-memory-coordinator.js";
@@ -91,6 +92,15 @@ try {
   if (embedder) {
     logger.info({ model: config.MEMORY_EMBED_MODEL }, "Vector memory retrieval is enabled");
   }
+  const memoryMaintenance = new MemoryMaintenanceCoordinator({
+    memory: memoryRepository,
+    decayStore,
+    vectorStore: embedder ? vectorStore : undefined,
+    logger,
+    dedupThreshold: config.MEMORY_DEDUP_THRESHOLD,
+    pruneDays: config.MEMORY_PRUNE_DAYS,
+    maintenanceHours: config.MEMORY_MAINTENANCE_HOURS,
+  });
   const autoMemory = new AutoMemoryCoordinator(
     workspaceStore,
     memoryRepository,
@@ -243,6 +253,7 @@ try {
   }
 
   autoMemory.start();
+  memoryMaintenance.start();
 
   // 启动后异步回填缺向量的记忆（不阻塞启动；硅基失败则跳过、下次再补）。
   if (vectorIndexer) {
@@ -259,6 +270,7 @@ try {
     logger.info("Stopping QQ Codex Bridge");
     pipeline.clear();
     autoMemory.stop();
+    memoryMaintenance.stop();
     if (webUiServer) await webUiServer.stop();
     await pluginRegistry.shutdown();
     await eventServer.stop();

@@ -65,6 +65,22 @@ export class MemoryDecayStore {
     await this.write(state);
   }
 
+  /** 强化：按量累加 referenceCount 并刷新时间（去重合并时把整簇的份量并到幸存者）。 */
+  async reinforce(ids: ReadonlyArray<string>, amount: number, now = new Date()): Promise<void> {
+    if (ids.length === 0 || amount <= 0) return;
+    const state = { ...(await this.read()) };
+    const stamp = now.toISOString();
+    for (const id of ids) {
+      const previous = state[id];
+      state[id] = {
+        ...previous,
+        lastReferencedAt: stamp,
+        referenceCount: (previous?.referenceCount ?? 0) + amount,
+      };
+    }
+    await this.write(state);
+  }
+
   /** 给某条记忆打上窗口归属，保留已有衰减状态。 */
   async assign(id: string, conversationId: string): Promise<void> {
     const state = { ...(await this.read()) };

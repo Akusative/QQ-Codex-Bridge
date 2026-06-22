@@ -59,6 +59,23 @@ describe("MemoryDecayStore", () => {
     expect(await new MemoryDecayStore(path).get("a")).toBeDefined();
   });
 
+  describe("强化", () => {
+    it("reinforce 按量累加 referenceCount 并保留窗口归属", async () => {
+      const store = await makeStore();
+      await store.touch(["m"]);
+      await store.assign("m", "w1");
+      await store.reinforce(["m"], 9);
+      const record = await store.get("m");
+      expect(record?.referenceCount).toBe(10); // touch 的 1 + 9
+      expect(record?.conversationId).toBe("w1");
+    });
+    it("amount<=0 不动", async () => {
+      const store = await makeStore();
+      await store.reinforce(["m"], 0);
+      expect(await store.get("m")).toBeUndefined();
+    });
+  });
+
   describe("窗口归属", () => {
     it("assign 打标签，pathsForConversation 按窗口取回", async () => {
       const store = await makeStore();
