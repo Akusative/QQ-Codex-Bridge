@@ -12,6 +12,9 @@ import { HighRiskConfirmation } from "./security/high-risk-confirmation.js";
 import { MemoryDraftManager } from "./memory/memory-draft-manager.js";
 import { MemoryRepository } from "./memory/memory-repository.js";
 import { MemoryDecayStore } from "./memory/memory-decay-store.js";
+import { MemoryVectorStore } from "./memory/memory-vector-store.js";
+import { SiliconFlowEmbedder } from "./memory/embedding-client.js";
+import { MemoryVectorIndexer } from "./memory/memory-retrieval.js";
 import { AutoMemoryCoordinator } from "./memory/auto-memory-coordinator.js";
 import { MessageProcessor } from "./message-processor.js";
 import { MessagePipeline } from "./pipeline/message-pipeline.js";
@@ -74,6 +77,20 @@ try {
   const decayStore = new MemoryDecayStore(
     join(config.ALLOWED_WORKSPACE_ROOT, "bridge-data", "memory-decay.json"),
   );
+  const vectorStore = new MemoryVectorStore(
+    join(config.ALLOWED_WORKSPACE_ROOT, "bridge-data", "memory-vectors.json"),
+  );
+  const embedder = config.SILICONFLOW_API_KEY
+    ? new SiliconFlowEmbedder({
+        apiKey: config.SILICONFLOW_API_KEY,
+        baseUrl: config.SILICONFLOW_BASE_URL,
+        model: config.MEMORY_EMBED_MODEL,
+      })
+    : undefined;
+  const vectorIndexer = embedder ? new MemoryVectorIndexer(embedder, vectorStore) : undefined;
+  if (embedder) {
+    logger.info({ model: config.MEMORY_EMBED_MODEL }, "Vector memory retrieval is enabled");
+  }
   const autoMemory = new AutoMemoryCoordinator(
     workspaceStore,
     memoryRepository,
@@ -82,6 +99,7 @@ try {
     config.CODEX_WORKDIR,
     config.TASK_TIMEOUT_SECONDS * 1_000,
     decayStore,
+    vectorIndexer,
   );
   let eventServer: OneBotEventServer;
   let pipeline: MessagePipeline;
@@ -92,6 +110,10 @@ try {
     workspaceStore,
     memoryRepository,
     decayStore,
+    embedder,
+    vectorStore,
+    vectorWeight: config.MEMORY_VECTOR_WEIGHT,
+    relevanceThreshold: config.MEMORY_RELEVANCE_THRESHOLD,
     autoMemory,
     highRiskConfirmation,
     memoryDrafts,
@@ -170,6 +192,8 @@ try {
       agent,
       memoryRepository,
       decayStore,
+      vectorIndexer,
+      memoryVectorStore: vectorStore,
       allowedWorkspaceRoot: config.ALLOWED_WORKSPACE_ROOT,
       autoMemory,
       workdir: config.CODEX_WORKDIR,
@@ -219,6 +243,14 @@ try {
   }
 
   autoMemory.start();
+
+  // 启动后异步回填缺向量的记忆（不阻塞启动；硅基失败则跳过、下次再补）。
+  if (vectorIndexer) {
+    void memoryRepository
+      .readApprovedMemories()
+      .then((entries) => vectorIndexer.backfill(entries))
+      .catch(() => undefined);
+  }
 
   let stopping = false;
   const shutdown = async () => {

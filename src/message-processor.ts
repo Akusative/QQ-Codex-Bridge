@@ -15,8 +15,12 @@ import {
   selectRelevantMemories,
 } from "./memory/memory-context.js";
 import type { MemoryDecayStore } from "./memory/memory-decay-store.js";
+import type { TextEmbedder } from "./memory/embedding-client.js";
+import type { MemoryVectorStore } from "./memory/memory-vector-store.js";
+import { buildHybridRelevance } from "./memory/memory-retrieval.js";
 import type { MemoryDraftManager } from "./memory/memory-draft-manager.js";
 import {
+  type ApprovedMemoryEntry,
   type MemoryRepository,
   MemoryRepositoryError,
 } from "./memory/memory-repository.js";
@@ -48,6 +52,10 @@ export interface MessageProcessorOptions {
   workspaceStore: BridgeWorkspaceStore;
   memoryRepository: MemoryRepository;
   decayStore?: MemoryDecayStore;
+  embedder?: TextEmbedder;
+  vectorStore?: MemoryVectorStore;
+  vectorWeight?: number;
+  relevanceThreshold?: number;
   autoMemory: AutoMemoryCoordinator;
   highRiskConfirmation: HighRiskConfirmation;
   memoryDrafts: MemoryDraftManager;
@@ -439,8 +447,19 @@ export class MessageProcessor {
               return !owner || owner === conversationId;
             })
           : approvedMemories;
+        // 向量混合检索：能用 embedder 就用，失败/未配则 relevance=undefined → 回退关键词。
+        let relevance: ((entry: ApprovedMemoryEntry) => number) | undefined;
+        if (this.options.embedder && this.options.vectorStore) {
+          relevance = await buildHybridRelevance(command, scopedMemories, {
+            embedder: this.options.embedder,
+            vectorStore: this.options.vectorStore,
+            vectorWeight: this.options.vectorWeight,
+          });
+        }
         const selectedMemories = selectRelevantMemories(command, scopedMemories, {
           decay: decaySnapshot,
+          relevance,
+          relevanceThreshold: relevance ? (this.options.relevanceThreshold ?? 0.3) : undefined,
         });
         // 永久记忆：本窗口的；新对话首条带一次，其余轮次仅在与本轮相关时带上。
         const permanentText = await workspaceStore.conversationPermanentMemory(conversationId);

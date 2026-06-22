@@ -28,6 +28,9 @@ export function selectRelevantMemories(
     maxCharacters?: number;
     decay?: MemoryDecayLookup;
     now?: Date;
+    // 外部相关度（如向量混合检索）；不传则用关键词 token 重叠。
+    relevance?: (entry: ApprovedMemoryEntry) => number;
+    relevanceThreshold?: number;
   } = {},
 ): ApprovedMemoryEntry[] {
   const maxEntries = limits.maxEntries ?? 8;
@@ -35,18 +38,22 @@ export function selectRelevantMemories(
   const now = limits.now ?? new Date();
   const includeAll = /(?:记忆|记得|以前|之前|长期偏好|长期规则)/.test(query);
   const queryTokens = tokenize(query);
+  const passesScore = (score: number): boolean =>
+    limits.relevanceThreshold !== undefined ? score >= limits.relevanceThreshold : score > 0;
   const scored = entries
     .map((entry) => {
       // preference/rule 恒选、不衰减；其余按时间衰减降权，被提鲜过的拉回。
       const always = entry.category === "preference" || entry.category === "rule";
-      const score = overlapScore(queryTokens, tokenize(`${entry.title} ${entry.summary}`));
+      const score = limits.relevance
+        ? limits.relevance(entry)
+        : overlapScore(queryTokens, tokenize(`${entry.title} ${entry.summary}`));
       const record = limits.decay?.(entry.relativePath);
       const reference = record?.lastReferencedAt || entry.updatedAt;
       const weight = always ? 1 : recencyWeight(ageInDays(reference, now));
       const refBoost = 1 + Math.min(record?.referenceCount ?? 0, 5) * 0.1;
       return { entry, always, score, effective: score * weight * refBoost };
     })
-    .filter((item) => item.always || includeAll || item.score > 0)
+    .filter((item) => item.always || includeAll || passesScore(item.score))
     .sort(
       (left, right) =>
         Number(right.always) - Number(left.always) ||

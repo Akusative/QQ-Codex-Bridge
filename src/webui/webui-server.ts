@@ -85,6 +85,8 @@ export interface WebUiServerOptions {
   setPluginEnabled?: (id: string, enabled: boolean) => Promise<void>;
   workspaceStore?: BridgeWorkspaceStore;
   decayStore?: MemoryScopeStore;
+  vectorIndexer?: { index(relativePath: string, text: string): Promise<void> };
+  memoryVectorStore?: { removeMany(ids: ReadonlyArray<string>): Promise<void> };
   personaDocumentExtractorScriptPath?: string;
   softwareUpdate?: SoftwareUpdateController;
   systemControl?: BridgeSystemController;
@@ -772,6 +774,7 @@ export class WebUiServer {
       }
       try {
         const result = await this.options.memoryRepository.update(entry, text);
+        await this.options.vectorIndexer?.index(entry.relativePath, `${entry.title} ${text}`);
         this.sendJson(response, 200, { synced: result.synced });
       } catch (error) {
         const message =
@@ -822,6 +825,9 @@ export class WebUiServer {
         return;
       }
       const result = await this.options.memoryRepository.add(candidate);
+      if (result.relativePath) {
+        await this.options.vectorIndexer?.index(result.relativePath, `${candidate.title} ${candidate.summary}`);
+      }
       session.memoryDrafts.clear();
       this.sendJson(response, 200, { synced: result.synced });
       return;
@@ -852,6 +858,7 @@ export class WebUiServer {
       }
       const result = await this.options.memoryRepository.remove(entry);
       await this.options.decayStore?.removeMany([entry.relativePath]);
+      await this.options.memoryVectorStore?.removeMany([entry.relativePath]);
       session.memoryDrafts.clear();
       this.sendJson(response, 200, { synced: result.synced });
       return;
@@ -1066,6 +1073,7 @@ export class WebUiServer {
       }
     }
     await this.options.decayStore.removeMany([...paths]);
+    await this.options.memoryVectorStore?.removeMany([...paths]);
   }
 
   private rejectSensitiveText(response: ServerResponse, text: string): boolean {

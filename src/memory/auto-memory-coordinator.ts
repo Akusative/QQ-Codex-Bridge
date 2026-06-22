@@ -15,6 +15,10 @@ interface MemoryScopeAssigner {
   assign(relativePath: string, conversationId: string): Promise<void>;
 }
 
+interface MemoryVectorIndex {
+  index(relativePath: string, text: string): Promise<void>;
+}
+
 export class AutoMemoryCoordinator {
   private readonly running = new Set<string>();
   private timer: NodeJS.Timeout | undefined;
@@ -27,6 +31,7 @@ export class AutoMemoryCoordinator {
     private readonly workdir: string,
     private readonly timeoutMs: number,
     private readonly scope?: MemoryScopeAssigner,
+    private readonly vectorIndex?: MemoryVectorIndex,
   ) {}
 
   start(): void {
@@ -103,8 +108,11 @@ export class AutoMemoryCoordinator {
         );
         if (safety.blocked) continue;
         const result = await this.memory.add(candidate);
-        // 给自动生成的记忆打上它来自的窗口归属。
-        if (result.relativePath) await this.scope?.assign(result.relativePath, conversationId);
+        // 给自动生成的记忆打上它来自的窗口归属 + 算向量索引。
+        if (result.relativePath) {
+          await this.scope?.assign(result.relativePath, conversationId);
+          await this.vectorIndex?.index(result.relativePath, `${candidate.title} ${candidate.summary}`);
+        }
       }
       await this.workspace.markMemorySummarized(conversationId, pending.messageCount);
       this.logger.info(

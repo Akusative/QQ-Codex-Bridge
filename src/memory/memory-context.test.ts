@@ -93,6 +93,32 @@ describe("buildMemoryAugmentedPrompt 永久记忆段", () => {
   });
 });
 
+describe("selectRelevantMemories relevance 覆盖（向量混合分）", () => {
+  const a = entry({ relativePath: "a.md", category: "event", summary: "加班到凌晨", updatedAt: "2026-06-21" });
+  const b = entry({ relativePath: "b.md", category: "event", summary: "生日蛋糕", updatedAt: "2026-06-21" });
+
+  it("用外部 relevance 排序，token 不重叠也能命中", () => {
+    const relevance = (e: ApprovedMemoryEntry) => (e.relativePath === "a.md" ? 0.8 : 0.1);
+    const selected = selectRelevantMemories("最近太累", [a, b], {
+      now: NOW,
+      relevance,
+      relevanceThreshold: 0.3,
+      maxEntries: 1,
+    });
+    expect(selected[0].relativePath).toBe("a.md");
+  });
+
+  it("relevanceThreshold 过滤掉未达阈值的", () => {
+    const relevance = (e: ApprovedMemoryEntry) => (e.relativePath === "a.md" ? 0.8 : 0.1);
+    const selected = selectRelevantMemories("最近太累", [a, b], {
+      now: NOW,
+      relevance,
+      relevanceThreshold: 0.3,
+    });
+    expect(selected.map((m) => m.relativePath)).toEqual(["a.md"]); // b 0.1 < 0.3 被过滤
+  });
+});
+
 describe("fuzzyMemoryDate", () => {
   it.each([
     ["2026-06-21", "2026-06-21"],
